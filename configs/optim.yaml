@@ -1,0 +1,48 @@
+# Optimisation hyperparameters, protocole §1 "Optimisation" table.
+epochs_max: 100
+early_stop_patience: 20       # raised from 10 on 2026-09-28. Now keys off a fixed 0.5/0.5
+                                # kl/bce combo, not train_loss_smoothed (see run.py's fit()) -
+                                # no validation metric enters this either.
+early_stop_smoothing: 5       # epochs averaged into the smoothed loss before comparing
+optimizer: adam
+weight_decay: 0.01
+learning_rate: 1.0e-4
+scheduler: cosine_annealing    # over the full epochs_max horizon, even though early stop
+                                # usually interrupts it before it completes
+batch_size: 128                # sacs; doubled from the protocol's 64 on 2026-09-23 -
+                                # 128 x 16 crops = 2048 crops/step
+n_crops_per_size: 8             # -> 16 crops per sac (8x128 + 8x224)
+num_workers: 8   # lowered from 32 back to 8 on 2026-09-23: 48 idle cores were
+                   # never the constraint - RAM was. Measured ~300-470MB RSS per
+                   # worker (scratchpad bench_worker_ram.py), so 32 workers ate
+                   # ~10-11GB on a 32GB machine, which is what drove the heavy
+                   # swapping (6.4GB swap used) that froze the machine. Measured
+                   # dataloader-only throughput at low worker counts (scratchpad
+                   # bench_dataloader_throughput.py): 4 workers already sustain
+                   # 9.93 sacs/s, 8 workers 12.56 sacs/s - both comfortably above
+                   # the vits16 model's ~8.8 sacs/s appetite, so 8 keeps a safety
+                   # margin without repeating the RAM overload.
+
+# micro_batch_size is the actual batch size given to the model/DataLoader per
+# pass (DataLoader's own batch_size= IS cfg["micro_batch_size"] - see run.py) -
+# batch_size above never touches the GPU, it's just the gradient-accumulation
+# target. Re-measured on 2026-09-23 after switching to dinov3_vits16 (scratchpad
+# bench_micro_batch.py, real BagModel+CombinedLoss+Adam, torch env): unlike
+# vitl16 (flat sacs/s regardless of batch - already fully GPU-compute-saturated
+# at just 1 sac/forward), vits16 gets real throughput gains from batching,
+# plateauing ~8.7-8.9 sacs/s from micro_batch_size=8 upward, OOM at 20. Set to
+# 16 (must evenly divide batch_size): near-peak throughput, 12GB/16GB used,
+# comfortable margin below the OOM point for real-data variance.
+micro_batch_size: 16
+use_amp: true
+
+# Adaptive KL/BCE loss weighting (src/training/loss_balancing.py) - a
+# deliberate departure from protocole §1's fixed 0.5/0.5 "pondération KL /
+# BCE": once per epoch, reweight towards whichever term has stalled
+# (EMA-smoothed loss ratio vs loss_balance_lag_epochs epochs ago, softmax'd
+# by loss_balance_temperature). Both start at 0.5/0.5 and stay there until
+# loss_balance_lag_epochs epochs of history exist.
+loss_balance_ema_decay: 0.9        # persistence of the EMA - closer to 1 = slower to move
+loss_balance_lag_epochs: 5         # how many epochs back the "stalled?" comparison looks
+loss_balance_temperature: 0.1      # softmax temperature - lower = more aggressive rebalancing
+loss_balance_weight_band: [0.2, 0.8]   # neither term's weight ever leaves this band

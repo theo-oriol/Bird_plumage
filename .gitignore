@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+runs/
+*.pdf
+.env
+old.runs/
+research_summary.html
+notebooks/familly.ipynb
+notebooks/spe.ipynb
+notebooks/dimorphism_vs_regression_rank_error.ipynb
+.claude/
+.vscode
