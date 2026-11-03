@@ -24,19 +24,19 @@ RESULTS_DIR = Path(__file__).resolve().parents[1] / "runs" / "benchmarks"
 
 
 # ── Timing ───────────────────────────────────────────────────────────────────
+# n specimens drawn at random (fixed seed)
 def sample_stems(dataset_dir: Path, n: int, seed: int = 0) -> list:
-    """n specimens drawn at random (fixed seed)."""
     all_files = sorted(dataset_dir.glob("*.rgb.zst"))
     rng = np.random.default_rng(seed)
     chosen = rng.choice(len(all_files), size=min(n, len(all_files)), replace=False)
     return [all_files[i].name[: -len(".rgb.zst")] for i in chosen]
 
 
+# Seconds per build_bag() call under one condition, for each stem
 def time_condition(
     dataset_dir, dataset_a1_dir, dataset_a2_dir, dataset_a7_dir, stems, codes, n_repeats=1,
     dataset_a6_class_dir=None, require_a6_cache_hit=False,
 ):
-    """Seconds per build_bag() call under one condition, for each stem."""
     condition = Condition(active=frozenset(codes))
     timings = []
     for stem in stems:
@@ -59,8 +59,8 @@ def time_condition(
     return timings
 
 
+# Print summary statistics and the projected time per training epoch
 def report(name, timings, n_train_images=40987, n_workers=8):
-    """Print summary statistics and the projected time per training epoch."""
     if not timings:
         print(f"{name:20s}  no successful runs")
         return None
@@ -83,9 +83,8 @@ def report(name, timings, n_train_images=40987, n_workers=8):
     return row
 
 
+# Time each CIELAB operation behind A1, A6 and A7 separately
 def fine_grained_cielab_breakdown(dataset_dir, stems):
-    """Time each CIELAB operation behind A1, A6 and A7 separately (they
-    dominate the coarse timings)."""
     print("\n--- fine-grained breakdown of the CIELAB-exclusive group ---")
     rows = []
     for stem in stems:
@@ -112,8 +111,7 @@ def fine_grained_cielab_breakdown(dataset_dir, stems):
             color.ablate_delhey_colour(rgb01, category=category, foreground=mask, strength=1.0)
             t_ablate = time.perf_counter() - t0
 
-        # What chain.py actually runs: one classification shared by the
-        # presence check and the removal (vs. two in t_presence + t_ablate)
+        # What chain.py runs: one classification shared by the presence check and the removal
         t0 = time.perf_counter()
         rng = np.random.default_rng(0)
         a6_colour_removal.draw_and_apply(canvas, mask, rng)
@@ -163,8 +161,7 @@ def main():
     print(f"benchmarking on {len(stems)} real specimens\n")
 
     # ── Coarse level ─────────────────────────────────────────────────────────
-    # A1/A2/A7 read their caches ([skip] if missing). A6 is timed online here;
-    # the A6_cached row below times the cache path on specimens already cached.
+    # A1/A2/A7 read their caches ([skip] if missing); A6 is timed online, A6_cached below
     conditions = [
         ("reference", frozenset()), ("A3", {"A3"}), ("A4", {"A4"}), ("A5", {"A5"}),
         ("A1", {"A1"}), ("A2", {"A2"}), ("A7", {"A7"}),

@@ -1,19 +1,3 @@
-"""The training (and sham) Dataset: one item = one sac of 16 crops, its
-condition redrawn fresh every time it's fetched (protocole §4: "tirees en
-ligne, par sac, a chaque passage").
-
-Each row of the fold DataFrame is one (specimen, view) pair - Back, Belly
-and Side are all included (see src/datasets/folds.py) and each is its own
-independent sac, sharing the same species-level habitat label as its
-sibling views. __getitem__ picks the matching view's own directory set
-(src/view_paths.py) before building crops, since a stem only exists inside
-its own view's NPY folder.
-
-`sham=True` reproduces the sham model of protocole §4: same everything, but
-the condition is always the reference (no ablation ever drawn) - the only
-thing that distinguishes the sham run from the main run is that one line.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -30,10 +14,12 @@ from ..ablations.common import Condition
 from ..rng import derive_rng
 from ..view_paths import resolve_view_dirs
 
+# ── Normalisation ────────────────────────────────────────────────────────────
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
 
+# ── Training bag dataset ─────────────────────────────────────────────────────
 class BagDataset(Dataset):
     def __init__(
         self,
@@ -43,22 +29,16 @@ class BagDataset(Dataset):
         sham: bool = False,
         enabled_codes: Optional[FrozenSet[str]] = None,
     ):
-        # None (the default, what Trainer always uses) draws the full
-        # protocol pool exactly as protocole §4 specifies - see
-        # combinations.draw_condition()'s enabled_codes docstring. Only
-        # meant for demos/notebooks that want to avoid ablations whose
-        # offline cache isn't built yet.
+        # None = full protocol pool (always in training); a subset is for demos only
         self.enabled_codes = enabled_codes
         self.stems = df["stem"].to_numpy()
         self.views = df["view"].to_numpy()
         self.habitats = np.stack(df["habitat"].to_numpy())
-        # one directory set per view (Back/Belly/Side) - each item picks the
-        # one matching its own view in __getitem__, see module docstring.
+        # One folder set per view; each item uses its own view's
         self.view_dirs = resolve_view_dirs(cfg)
         self.run_seed = run_seed
         self.sham = sham
-        # bumped by the training loop at the start of every epoch, so the
-        # same index draws a different condition each pass over the data
+        # Set by the training loop each epoch, so an index draws a new condition each pass
         self.epoch = 0
 
     def __len__(self) -> int:

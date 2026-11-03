@@ -1,11 +1,3 @@
-"""Which habitats can the model tell apart? Pairwise discriminability, clean images.
-
-Each image gets a main habitat = argmax of its label distribution. For every pair
-(a, b): among images whose main habitat is a or b, AUC of "main = a" ranked by
-log(out_a / out_b). 0.5 = can't tell them apart, 1 = always can. Family bootstrap
-(B=500) 95% CI. Pairs where either side has < MIN_IMG images or < MIN_FAM
-families as main habitat are skipped. One model in memory at a time.
-"""
 import os
 import gc
 import json
@@ -15,6 +7,8 @@ import numpy as np
 from sklearn.metrics import roc_auc_score
 
 from paths import RUNS_DIR, LABELS_JSON
+
+# ── Settings ─────────────────────────────────────────────────────────────────
 BASE = RUNS_DIR
 SP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 os.makedirs(SP, exist_ok=True)
@@ -23,6 +17,7 @@ NH, B, SEED, MIN_IMG, MIN_FAM = 10, 500, 12345, 200, 5
 EPS = 1e-6
 
 
+# ── Helpers ──────────────────────────────────────────────────────────────────
 def load(model):
     S, H, F = [], [], []
     for k in range(3):
@@ -36,6 +31,7 @@ def load(model):
     return np.concatenate(S), np.concatenate(H), np.array(F)
 
 
+# ── Per model ────────────────────────────────────────────────────────────────
 out = {"habitat_names": names, "B": B, "min_img": MIN_IMG, "min_fam": MIN_FAM}
 for model in ("main", "sham"):
     t0 = time.time()
@@ -72,5 +68,6 @@ for model in ("main", "sham"):
     del S, H, F, L, C
     gc.collect()
 
+# ── Write ────────────────────────────────────────────────────────────────────
 json.dump(out, open(f"{SP}/pairwise_check.json", "w"))
 print("wrote pairwise_check.json")

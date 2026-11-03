@@ -1,14 +1,3 @@
-"""Where does the group signal come from? Group-pair discriminability under each ablation.
-
-Groups (from clustering the clean pairwise matrix):
-  Forest | Savanna/Shrubland/Artificial | Grassland/Desert/Rocky | Sea (Neritic + Marine Intertidal) | Wetlands
-Each image's main group = group with the largest summed label share. For every
-pair of groups (G1, G2) and every condition: among images whose main group is G1
-or G2, AUC of "main group = G1" ranked by log(sum of G1 outputs / sum of G2
-outputs). Paired family bootstrap (B=500, same draws everywhere): CI of the AUC
-and of the change vs. clean images (for A6, clean = same images). A3 seeds are
-averaged. One model in memory at a time.
-"""
 import os
 import gc
 import json
@@ -17,6 +6,8 @@ import time
 import numpy as np
 
 from paths import RUNS_DIR
+
+# ── Settings ─────────────────────────────────────────────────────────────────
 BASE = RUNS_DIR
 SP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 os.makedirs(SP, exist_ok=True)
@@ -32,6 +23,7 @@ SINGLE = ["reference", "A1", "A2", "A5", "A7",
 ROWS = SINGLE + list(SEED_GROUPS)
 
 
+# ── Helpers ──────────────────────────────────────────────────────────────────
 def load(model):
     dfs = []
     for k in range(3):
@@ -80,8 +72,8 @@ def make_wauc(counts):
     return wauc
 
 
+# Group-pair AUCs for one condition: point [pair], bootstrap [pair, B] (optionally rows idx only)
 def pair_aucs(d, fam2i, wauc, idx=None):
-    """P[pair], BT[pair, B] for one condition (optionally restricted to rows idx)."""
     mg, go, fam = d["main_g"], d["gout"], d["fam"]
     if idx is not None:
         mg, go, fam = mg[idx], go[idx], fam[idx]
@@ -100,6 +92,7 @@ def ci(x):
     return np.nanpercentile(x, [2.5, 97.5], axis=-1)
 
 
+# ── Per model ────────────────────────────────────────────────────────────────
 out = {"groups": GROUPS, "group_names": GN, "pairs": PAIRS, "rows": ROWS, "B": B}
 fams = None
 for model in ("main", "sham"):
@@ -144,5 +137,6 @@ for model in ("main", "sham"):
     gc.collect()
     print(f"=== {model} done ({time.time() - t0:.0f}s) ===", flush=True)
 
+# ── Write ────────────────────────────────────────────────────────────────────
 json.dump(out, open(f"{SP}/group_ablation.json", "w"))
 print("wrote group_ablation.json")

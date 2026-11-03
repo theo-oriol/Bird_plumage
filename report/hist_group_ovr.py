@@ -1,10 +1,12 @@
-"""Histogram control (5.3) and texture check with the 5 one-vs-rest group AUCs."""
 import gc, json, pickle
 import sys
 import numpy as np
+
+# ── Settings ─────────────────────────────────────────────────────────────────
 MODE = sys.argv[1] if len(sys.argv) > 1 else "main"
 from svlib import BASE, SP, GN, bootstrap_counts, make_wauc, group_ovr, ci
 
+# ── Load ─────────────────────────────────────────────────────────────────────
 stems = np.load(f"{SP}/hist_stems.npy", allow_pickle=True)
 pos = {s: i for i, s in enumerate(stems)}
 N = len(stems)
@@ -23,6 +25,8 @@ for model in ("main", "sham"):
             if c == "reference" and model == "main":
                 H[ii] = np.stack(sub.habitat.to_numpy()); fam[ii] = sub.family.to_numpy()
         del df; gc.collect()
+
+# ── Group AUCs ───────────────────────────────────────────────────────────────
 fams = sorted(set(fam)); fam2i = {f: i for i, f in enumerate(fams)}
 fidx = np.array([fam2i[f] for f in fam], np.int32)
 wauc = make_wauc(bootstrap_counts(fams))
@@ -39,6 +43,8 @@ gs = np.stack([H[:, [[0], [1, 2, 6], [3, 4, 9], [5, 7], [8]][g]].sum(1) for g in
 out = {"groups": GN, "n_main_group": [int((gs == g).sum()) for g in range(5)],
        "rows": {k: {"auc": v[0].tolist(), "lo": ci(v[1])[0].tolist(), "hi": ci(v[1])[1].tolist(), "mean": float(v[0].mean()),
                     "mean_ci": ci(v[1].mean(0)).tolist()} for k, v in R.items()}, "diffs": {}}
+
+# ── Print and write ──────────────────────────────────────────────────────────
 print(f"{'':26s}" + "".join(f"{k:>11s}" for k in R))
 for g in range(5):
     print(f"{GN[g]:26s}" + "".join(f"{R[k][0][g]:11.3f}" for k in R))

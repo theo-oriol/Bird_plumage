@@ -1,10 +1,10 @@
-"""Histogram control (5.3) and texture check, per habitat instead of per group pair:
-presence AUC per habitat (as sections 1-3), paired family bootstrap."""
 import gc, json, pickle
 import numpy as np
 from svlib import BASE, SP, bootstrap_counts, make_wauc, metrics, ci
 
 from paths import LABELS_JSON
+
+# ── Load ─────────────────────────────────────────────────────────────────────
 names = json.load(open(LABELS_JSON))
 stems = np.load(f"{SP}/hist_stems.npy", allow_pickle=True)
 pos = {s: i for i, s in enumerate(stems)}
@@ -21,6 +21,8 @@ for k in range(3):
         if c == "reference":
             H[ii] = np.stack(sub.habitat.to_numpy()); fam[ii] = sub.family.to_numpy()
     del df; gc.collect()
+
+# ── Habitat AUCs ─────────────────────────────────────────────────────────────
 fams = sorted(set(fam)); fam2i = {f: i for i, f in enumerate(fams)}
 fidx = np.array([fam2i[f] for f in fam], np.int32)
 wauc = make_wauc(bootstrap_counts(fams))
@@ -31,6 +33,8 @@ R = {"hist_all": hab(np.load(f"{SP}/hist_pred_crops_mlp.npy")), "hist_L": hab(np
 s = [hab(net[f"A3_h1_r{r}"]) for r in (1, 2, 3)]
 R["main_h1"] = (np.mean([x[0] for x in s], 0), np.mean([x[1] for x in s], 0))
 out = {"habitats": names, "rows": {k: v[0].tolist() for k, v in R.items()}, "diffs": {}}
+
+# ── Print and write ──────────────────────────────────────────────────────────
 print(f"{'':40s}" + "".join(f"{k:>11s}" for k in R))
 for h in range(10):
     print(f"{names[h][:40]:40s}" + "".join(f"{R[k][0][h]:11.3f}" for k in R))

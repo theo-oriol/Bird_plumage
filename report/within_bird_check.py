@@ -1,11 +1,3 @@
-"""Within-bird proportion check, clean images: when a bird uses both habitats A and B,
-does the model know which one is larger?
-
-For each pair (a, b): images with share_a > 0 and share_b > 0 and share_a != share_b.
-Truth = share_a > share_b; score = log(out_a / out_b). AUC with family bootstrap
-(B=500) 95% CI. Pairs with < MIN_IMG images or < MIN_FAM families (or < MIN_SIDE
-images on either side of the truth) are skipped. One model in memory at a time.
-"""
 import os
 import gc
 import json
@@ -15,6 +7,8 @@ import numpy as np
 from sklearn.metrics import roc_auc_score
 
 from paths import RUNS_DIR, LABELS_JSON
+
+# ── Settings ─────────────────────────────────────────────────────────────────
 BASE = RUNS_DIR
 SP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 os.makedirs(SP, exist_ok=True)
@@ -22,6 +16,7 @@ names = json.load(open(LABELS_JSON))
 NH, B, SEED, MIN_IMG, MIN_FAM, MIN_SIDE, EPS = 10, 500, 12345, 200, 5, 30, 1e-6
 
 
+# ── Helpers ──────────────────────────────────────────────────────────────────
 def load(model):
     S, H, F = [], [], []
     for k in range(3):
@@ -35,6 +30,7 @@ def load(model):
     return np.concatenate(S), np.concatenate(H), np.array(F)
 
 
+# ── Per model ────────────────────────────────────────────────────────────────
 out = {"habitat_names": names, "B": B, "min_img": MIN_IMG, "min_fam": MIN_FAM, "min_side": MIN_SIDE}
 for model in ("main", "sham"):
     t0 = time.time()
@@ -70,5 +66,6 @@ for model in ("main", "sham"):
     del S, H, F, L, C
     gc.collect()
 
+# ── Write ────────────────────────────────────────────────────────────────────
 json.dump(out, open(f"{SP}/within_bird_check.json", "w"))
 print("wrote within_bird_check.json")

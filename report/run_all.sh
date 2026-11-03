@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Reproduce every result of the report in one command, one job at a time (heavy jobs load all predictions).
-# Outputs (JSON, CSV, NPZ, PNG) go to results/.
 set -euo pipefail
+
+# ── Settings ─────────────────────────────────────────────────────────────────
+# One job at a time: the heavy ones load all predictions
 cd "$(dirname "$0")"
 [ -f ../.env ] || { echo "copy .env.example to .env at the repository root and set the paths"; exit 1; }
 set -a; . ../.env; set +a
@@ -9,13 +10,13 @@ PY=${PYTHON:-python}
 export KMP_AFFINITY=disabled
 run() { echo "=== $* ($(date +%H:%M))"; nice -n 10 "$PY" "$@"; }
 
-# sections 1-3, loss table and figures
+# ── Sections 1-3, loss table and figures ─────────────────────────────────────
 run compute_regression_bootstrap.py
 run compute_regression_benchmark.py
 run make_losses_json.py
 run plot_loss_curves.py
 
-# section 4: specificity
+# ── Section 4: specificity ───────────────────────────────────────────────────
 run cross_output_check.py
 run nonforest_check.py
 run pairwise_check.py
@@ -24,7 +25,7 @@ run copresence_check.py
 run copres_baseline.py
 run pairwise_clustering.py
 
-# section 5: where the signal comes from
+# ── Section 5: where the signal comes from ───────────────────────────────────
 run group_ablation.py
 run group_ovr_ablation.py main
 run group_ovr_ablation.py presence
@@ -39,7 +40,7 @@ run hist_per_habitat.py
 run pattern_only.py
 run texture_check.py
 
-# section 6: view, sex, dimorphism
+# ── Section 6: view, sex, dimorphism ─────────────────────────────────────────
 run sex_view_check.py
 run sex_dimorph.py
 run sex_groups.py

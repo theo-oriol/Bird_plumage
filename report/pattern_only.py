@@ -1,20 +1,10 @@
-"""What does each source carry on its own? Three levels (10 habitats, 5 groups as
-main group vs. rest, 10 group pairs), main model, mean AUC with family-bootstrap CI.
-
-  pattern only      = network on A2 images (greyscale, each bird's lightness matched to a
-                      common target: only the light/dark arrangement is left)
-  lightness distr.  = lightness-histogram model (5.3)
-  colour distr.     = colour-histogram model (5.3)
-  colour+lightness  = full-histogram model (5.3)
-  everything        = network on clean images
-Paired differences: pattern only - lightness distr., pattern only - colour distr.
-"""
 import gc
 import json
 import pickle
 import numpy as np
 from svlib import BASE, SP, bootstrap_counts, make_wauc, metrics, group_ovr, ci
 
+# ── Load ─────────────────────────────────────────────────────────────────────
 stems = np.load(f"{SP}/hist_stems.npy", allow_pickle=True)
 pos = {s: i for i, s in enumerate(stems)}
 N = len(stems)
@@ -37,6 +27,7 @@ fam2i = {f: i for i, f in enumerate(fams)}
 fidx = np.array([fam2i[f] for f in fam], np.int32)
 wauc = make_wauc(bootstrap_counts(fams))
 
+# ── Sources on their own ─────────────────────────────────────────────────────
 SRC = {"pattern": net["A2"], "lightness": np.load(f"{SP}/hist_pred_crops_L_mlp.npy"),
        "colour": np.load(f"{SP}/hist_pred_crops_ab_mlp.npy"), "colour_lightness": np.load(f"{SP}/hist_pred_crops_mlp.npy"),
        "everything": net["reference"]}
@@ -55,6 +46,8 @@ for a, b in (("pattern", "lightness"), ("pattern", "colour")):
     for lvl in out["levels"]:
         D = np.nanmean(boots[a][lvl] - boots[b][lvl], 0)
         out["diffs"][f"{a} - {b}"][lvl] = {"mean": out["sources"][a][lvl]["mean"] - out["sources"][b][lvl]["mean"], "ci": ci(D).tolist()}
+
+# ── Write ────────────────────────────────────────────────────────────────────
 json.dump(out, open(f"{SP}/pattern_only.json", "w"), indent=1)
 for name, v in out["sources"].items():
     print(f"{name:18s} " + "   ".join(f"{l} {v[l]['mean']:.3f} [{v[l]['mean_ci'][0]:.3f}, {v[l]['mean_ci'][1]:.3f}] ({v[l]['n_above_chance']} > 0.5)" for l in out["levels"]))

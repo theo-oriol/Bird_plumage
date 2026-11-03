@@ -1,11 +1,3 @@
-"""Co-presence check, clean images: among birds that use habitat A, can the model
-tell whether they also use habitat B?
-
-For each ordered pair (A, B), A != B: images with share_A > 0. Truth = share_B > 0;
-score = output B. AUC with family bootstrap (B=500) 95% CI. Pairs with fewer than
-MIN_SIDE images on either side of the truth or < MIN_FAM families are skipped.
-One model in memory at a time.
-"""
 import os
 import gc
 import json
@@ -15,6 +7,8 @@ import numpy as np
 from sklearn.metrics import roc_auc_score
 
 from paths import RUNS_DIR, LABELS_JSON
+
+# ── Settings ─────────────────────────────────────────────────────────────────
 BASE = RUNS_DIR
 SP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 os.makedirs(SP, exist_ok=True)
@@ -22,6 +16,7 @@ names = json.load(open(LABELS_JSON))
 NH, B, SEED, MIN_SIDE, MIN_FAM = 10, 500, 12345, 30, 5
 
 
+# ── Helpers ──────────────────────────────────────────────────────────────────
 def load(model):
     S, H, F = [], [], []
     for k in range(3):
@@ -35,6 +30,7 @@ def load(model):
     return np.concatenate(S), np.concatenate(H), np.array(F)
 
 
+# ── Per model ────────────────────────────────────────────────────────────────
 out = {"habitat_names": names, "B": B, "min_side": MIN_SIDE, "min_fam": MIN_FAM}
 for model in os.environ.get("MODELS", "main,sham").split(","):
     t0 = time.time()
@@ -72,5 +68,6 @@ for model in os.environ.get("MODELS", "main,sham").split(","):
     del S, H, F, C
     gc.collect()
 
+# ── Write ────────────────────────────────────────────────────────────────────
 json.dump(out, open(f"{SP}/copresence_check.json", "w"))
 print("wrote copresence_check.json")

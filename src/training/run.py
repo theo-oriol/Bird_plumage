@@ -1,12 +1,3 @@
-"""The training loop itself (protocole §1 "Optimisation" + §4 sham).
-
-One call to Trainer.fit() is one of the six runs the protocol describes:
-three folds x {main, sham}. Everything that makes a run reproducible later
-gets written to its run directory up front (resolved config + manifest),
-and every epoch appends one row to metrics.csv — that's the whole
-traceability story, deliberately nothing fancier than files on disk.
-"""
-
 from __future__ import annotations
 
 import csv
@@ -31,9 +22,11 @@ from .loss_balancing import AdaptiveLossBalancer
 from .manifest import build_manifest, write_manifest
 from .seeding import seed_everything, worker_init_fn
 
+# ── Paths ────────────────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
+# ── Trainer ──────────────────────────────────────────────────────────────────
 class Trainer:
     def __init__(self, cfg: Dict[str, Any], config_path: str):
         # Crée les dossiers du modèle 
@@ -64,10 +57,7 @@ class Trainer:
             run_seed=cfg["seed"],
             sham=cfg["sham"],
         )
-        # the DataLoader hands out micro-batches; the Trainer accumulates
-        # gradients over several of them to reach the config's real
-        # batch_size without needing that many sacs in GPU memory at once
-        # (see configs/optim.yaml's comment on micro_batch_size).
+        # Gradients accumulate over micro-batches up to batch_size
         if cfg["batch_size"] % cfg["micro_batch_size"] != 0:
             raise ValueError("batch_size must be a multiple of micro_batch_size")
         self.accumulation_steps = cfg["batch_size"] // cfg["micro_batch_size"]
@@ -82,14 +72,7 @@ class Trainer:
             pin_memory=True,
         )
 
-        # Validation loss, tracked purely for observation (see fit()'s
-        # docstring note) - NOT currently used for early-stop/best-checkpoint
-        # selection, which still watches the adaptively-reweighted train loss.
-        # EvalDataset builds the *entire* §7 grid (every ablation condition x
-        # every image); we only want the "reference" (no-ablation) condition
-        # once per validation image, so its item list is filtered down to
-        # exactly that right after construction - len(valid_df) items, not
-        # len(valid_df) x len(all_conditions).
+        # Validation loss on the reference condition only, one item per image (logged, not used for selection)
         valid_df = folds.load_fold(cfg, cfg["fold"], "valid")
         manifest["valid_size"] = len(valid_df)
         self.valid_dataset = EvalDataset(valid_df, cfg)
@@ -123,19 +106,7 @@ class Trainer:
         self.scheduler = CosineAnnealingLR(self.optimizer, T_max=cfg["epochs_max"])
         self.use_amp = cfg["use_amp"] and self.device.type == "cuda"
 
-        # Early-stop bookkeeping lives on self, not as fit()-local variables,
-        # so a resumed run can restore it instead of re-deciding "stalled?"
-        # from a blank slate (see _load_checkpoint).
-        # recent_losses/train_loss_smoothed (adaptively-reweighted) is kept
-        # only for display - early-stop and best.pt selection key off
-        # recent_fixed_losses instead: kl/bce combined with a FIXED 0.5/0.5,
-        # immune to the balancer's own weight shifts (see fit()'s note).
-        # Deliberately NOT validation loss either, even though that's also
-        # balancer-immune: this fold's validation split is the same one
-        # run_eval.py later scores the §7 grid against, so letting it drive
-        # checkpoint selection would bias that evaluation - the model would
-        # be picked to do well on the exact data its headline numbers get
-        # computed from. val_loss is logged for observation only.
+        # Early-stop state lives on self (restored on resume); it uses the fixed 0.5/0.5 train loss, never validation
         self.start_epoch = 1
         self.recent_losses: deque = deque(maxlen=cfg["early_stop_smoothing"])
         self.recent_val_losses: deque = deque(maxlen=cfg["early_stop_smoothing"])
@@ -173,8 +144,7 @@ class Trainer:
                 cls_logits, reg_logits, _attention = self.model(crops)
                 loss, parts = self.loss_fn(cls_logits, reg_logits, support, habitat)
 
-            # scale down so accumulated gradients average to the same thing
-            # a single batch_size-sized step would have produced
+            # Scale so accumulated gradients average like one batch_size step
             (loss / self.accumulation_steps).backward()
 
             is_last = step == len(self.loader) - 1
@@ -194,19 +164,8 @@ class Trainer:
             "bce": total_bce / n_micro_batches,
         }
 
+    # Forward pass on the held-out reference images; val_loss uses fixed 0.5/0.5 weights (logged only)
     def _run_validation(self, epoch: int) -> Dict[str, float]:
-        """One forward-only pass over the fold's held-out "reference"
-        (no-ablation) images - the same images/crops every epoch (EvalDataset
-        seeds geometry from the stem alone), so any change in val_loss across
-        epochs reflects the model, not crop-sampling noise.
-
-        val_loss combines val_kl/val_bce with a FIXED 0.5/0.5, deliberately
-        not self.loss_fn's current (adaptively-reweighted) lambda_kl/lambda_bce
-        - the whole point of tracking this is a number that's comparable
-        epoch-to-epoch and isn't itself subject to the reweighting-artifact
-        jumps documented in loss_balancing.py. Not yet used for early-stop or
-        best-checkpoint selection (see fit()) - logged for observation only.
-        """
         self.model.eval()
         total_kl = total_bce = 0.0
         n_micro_batches = 0
@@ -234,10 +193,7 @@ class Trainer:
 
         for epoch in range(self.start_epoch, self.cfg["epochs_max"] + 1):
             t0 = time.time()
-            # loss_fn.lambda_kl/lambda_bce are whatever the previous
-            # iteration's balancer update left them at (0.5/0.5 to start) -
-            # logged below as the weights actually used *this* epoch, then
-            # updated afterwards for the next one.
+            # Weights used this epoch (set by the previous balancer update)
             w_kl, w_bce = self.loss_fn.lambda_kl, self.loss_fn.lambda_bce
             epoch_stats = self._run_epoch(epoch)
             val_stats = self._run_validation(epoch)
@@ -248,9 +204,7 @@ class Trainer:
             smoothed = sum(self.recent_losses) / len(self.recent_losses)
             self.recent_val_losses.append(val_stats["val_loss"])
             val_smoothed = sum(self.recent_val_losses) / len(self.recent_val_losses)
-            # the fixed-weight quantity that actually drives early-stop/best.pt
-            # (see __init__'s note) - computed from the same kl/bce this epoch
-            # already produced, no extra pass needed.
+            # Fixed 0.5/0.5 loss that drives early stop and best.pt
             fixed_loss = 0.5 * epoch_stats["kl"] + 0.5 * epoch_stats["bce"]
             self.recent_fixed_losses.append(fixed_loss)
             fixed_smoothed = sum(self.recent_fixed_losses) / len(self.recent_fixed_losses)
@@ -278,16 +232,7 @@ class Trainer:
             next_weights = self.loss_balancer.update({"kl": epoch_stats["kl"], "bce": epoch_stats["bce"]})
             self.loss_fn.set_weights(next_weights["kl"], next_weights["bce"])
 
-            # best.pt / early-stop key off fixed_smoothed (see __init__'s
-            # note): never the adaptively-reweighted train_loss_smoothed
-            # (shown to falsely register "stalled" purely from a balancer
-            # weight shift - fold1's premature stop at epoch 16), and
-            # deliberately never val_loss either, to keep the validation
-            # split untouched by model selection for run_eval.py later.
-            # This update happens *before* saving "last" - last.pt must
-            # reflect this epoch's own best_fixed_smoothed/
-            # epochs_without_improvement, or resuming from it restores stale
-            # counters that are missing this epoch's own verdict.
+            # Best/early stop on fixed_smoothed (not the reweighted loss, not val_loss); updated before saving last.pt
             is_best = fixed_smoothed < self.best_fixed_smoothed
             if is_best:
                 self.best_fixed_smoothed = fixed_smoothed
@@ -311,12 +256,7 @@ class Trainer:
                 break
 
     def _save_checkpoint(self, name: str, epoch: int) -> None:
-        # backbone.state_dict() on a peft-wrapped model saves the (frozen)
-        # base weights plus the LoRA deltas together — evaluate.py rebuilds
-        # the same peft-wrapped architecture and loads this back as-is.
-        # Everything past "heads" exists only so last.pt can be resumed from
-        # (optimizer/scheduler momentum, early-stop counters, loss-balancer
-        # EMA history) - evaluate.py only ever reads backbone/pool/heads.
+        # Backbone (frozen weights + LoRA), pool and heads; the rest only serves resuming
         state = {
             "epoch": epoch,
             "backbone": self.model.backbone.state_dict(),
@@ -335,11 +275,8 @@ class Trainer:
         }
         torch.save(state, self.run_dir / "checkpoints" / f"{name}.pt")
 
+    # True if resumed; False if the file is unusable (the run then starts fresh)
     def _load_checkpoint(self, path: Path) -> bool:
-        """Returns True on a successful resume, False if path was unusable
-        (corrupted/incompatible) - in which case the caller starts fresh
-        rather than crash, the same lesson as today's A2 cache corruption:
-        a bad file on disk shouldn't be worse than a missing one."""
         try:
             state = torch.load(path, map_location=self.device, weights_only=False)
             self.model.backbone.load_state_dict(state["backbone"])

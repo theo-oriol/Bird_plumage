@@ -1,32 +1,3 @@
-"""Adaptive KL/BCE loss weighting - a deliberate departure from protocole
-§1's fixed 0.5/0.5 "pondération KL / BCE": once per epoch, reweight the two
-loss terms towards whichever one has stalled, instead of leaving both
-fixed for the whole run.
-
-Concretely (EMA-smoothed loss ratio, evaluated once per epoch t):
-
-    r_i(t) = L~_i(t-1) / L~_i(t-1-k)
-    w_i(t) = softmax(r_i(t) / T)      over the loss terms i
-    w_i(t) clipped into [w_min, w_max]
-
-L~_i is an EMA of term i's raw per-epoch loss (persistence `ema_decay`,
-close to 1 = slow to move = "inertia"). r_i close to 1 means that term's
-smoothed loss barely moved over the last k epochs ("stalled"); r_i > 1
-means it got worse. softmax is monotonic increasing in its input, so no
-sign flip is needed: a stalled or worsening term (larger r_i) already gets
-the larger weight. Temperature T controls how aggressively weight shifts
-towards the stalled term - low T is closer to winner-take-all, high T is
-closer to an even split. The band clip (symmetric around 0.5 for this
-two-term setup - clipping one term's weight to w automatically puts the
-other at 1-w, so the pair always sums to 1) guarantees neither term is
-ever fully abandoned.
-
-Before `lag_epochs` epochs of history exist, there is no k-epochs-ago
-value to compare against, so update() returns an even split - the same
-0.5/0.5 protocole §1 prescribes, used here only as a bootstrap default
-rather than a fixed choice for the whole run.
-"""
-
 from __future__ import annotations
 
 import math
@@ -34,6 +5,7 @@ from collections import deque
 from typing import Deque, Dict, Optional, Tuple
 
 
+# ── Adaptive loss balancer ───────────────────────────────────────────────────
 class AdaptiveLossBalancer:
     def __init__(
         self,
@@ -62,15 +34,11 @@ class AdaptiveLossBalancer:
         self.weight_band = weight_band
 
         self._ema: Dict[str, Optional[float]] = {name: None for name in names}
-        # holds the last (lag_epochs + 1) EMA values per term - once full,
-        # [0] and [-1] are exactly lag_epochs apart, sliding forward every
-        # call as new values push old ones out.
+        # Last lag_epochs + 1 EMA values per term: [0] and [-1] are lag_epochs apart
         self._history: Dict[str, Deque[float]] = {name: deque(maxlen=lag_epochs + 1) for name in names}
 
+    # For checkpoints: a resumed run keeps the same EMA and lag history
     def state_dict(self) -> Dict[str, object]:
-        """For Trainer checkpointing - a resumed run needs this to keep
-        computing the *same* r_i(t) it would have without the interruption,
-        not restart the EMA/lag history from scratch."""
         return {
             "ema": dict(self._ema),
             "history": {name: list(hist) for name, hist in self._history.items()},
@@ -81,9 +49,8 @@ class AdaptiveLossBalancer:
         for name, values in state["history"].items():
             self._history[name] = deque(values, maxlen=self.lag_epochs + 1)
 
+    # Once per epoch, with that epoch's mean loss per term; returns the next epoch's weights
     def update(self, raw_losses: Dict[str, float]) -> Dict[str, float]:
-        """Call once per epoch with that epoch's mean raw loss per term.
-        Returns the weights to use for the *next* epoch."""
         for name in self.names:
             raw = raw_losses[name]
             prev = self._ema[name]
@@ -98,9 +65,7 @@ class AdaptiveLossBalancer:
         r_a = self._history[a][-1] / self._history[a][0]
         r_b = self._history[b][-1] / self._history[b][0]
 
-        # two-term softmax(r / T), computed as a sigmoid of the difference
-        # for numerical stability (equivalent, avoids exponentiating large
-        # r/T directly).
+        # Two-term softmax(r / T) written as a sigmoid, for numerical stability
         w_a = 1.0 / (1.0 + math.exp(-(r_a - r_b) / self.temperature))
 
         lo, hi = self.weight_band

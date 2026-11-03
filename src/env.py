@@ -1,10 +1,3 @@
-"""Machine-specific paths come from a `.env` file at the repository root (see
-`.env.example`), so no personal path is written in the code or the configs.
-
-`configs/paths.yaml` uses `${VAR}` placeholders; `expand_config()` replaces
-them with the values from `.env` (or from the environment, which wins).
-"""
-
 from __future__ import annotations
 
 import os
@@ -12,12 +5,14 @@ import re
 from pathlib import Path
 from typing import Any
 
+# ── State ────────────────────────────────────────────────────────────────────
 REPO_ROOT = Path(__file__).resolve().parents[1]
 _loaded = False
 
 
+# ── .env loading ─────────────────────────────────────────────────────────────
+# Read KEY=VALUE lines from .env into os.environ (existing variables win)
 def load_dotenv(path: str | Path = REPO_ROOT / ".env") -> None:
-    """Read KEY=VALUE lines into os.environ (existing variables are kept)."""
     global _loaded
     if _loaded:
         return
@@ -35,8 +30,9 @@ def load_dotenv(path: str | Path = REPO_ROOT / ".env") -> None:
         os.environ.setdefault(key.strip(), os.path.expanduser(value))
 
 
+# ── Config expansion ─────────────────────────────────────────────────────────
+# Replace ${VAR} in every string of a nested config; fail on unset variables
 def expand_config(value: Any) -> Any:
-    """Replace ${VAR} in every string of a (nested) config; fail on unset variables."""
     load_dotenv()
     if isinstance(value, dict):
         return {k: expand_config(v) for k, v in value.items()}

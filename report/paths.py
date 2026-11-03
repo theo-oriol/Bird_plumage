@@ -1,12 +1,6 @@
-"""Paths used by the report scripts, read from the .env file at the repository root
-(see .env.example there).
-
-Paths inside this repository (runs, habitat names, dimorphism tables) default to
-locations relative to it; the image dataset, outside the repository, must be set
-in .env or as an environment variable.
-"""
 import os
 
+# ── Read .env ────────────────────────────────────────────────────────────────
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -25,6 +19,7 @@ def _load_env(path):
 _load_env(os.path.join(os.path.dirname(HERE), ".env"))
 
 
+# ── Paths inside the repository ──────────────────────────────────────────────
 def _get(key, default=None):
     val = os.environ.get(key, default)
     if val is None:
@@ -36,8 +31,9 @@ PROJECT_ROOT = _get("PROJECT_ROOT", os.path.dirname(HERE))          # contains s
 RUNS_DIR = _get("RUNS_DIR", os.path.join(PROJECT_ROOT, "runs"))      # runs/<model>_fold<k>/eval/predictions.pkl
 
 
+# ── External paths (read only when used) ─────────────────────────────────────
+# Paths to data outside the repository, resolved only when a script asks for them
 def __getattr__(name):
-    """External paths: only required by the scripts that use them."""
     if name == "LABELS_JSON":
         # labeltoname.json: the 10 habitat names
         return os.environ.get("LABELS_JSON") or os.path.join(PROJECT_ROOT, "configs", "labeltoname.json")

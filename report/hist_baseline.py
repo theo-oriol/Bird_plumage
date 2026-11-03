@@ -1,17 +1,3 @@
-"""Histogram-only baseline vs. the network on pixel-shuffled images (A3_h1).
-
-A3_h1 keeps only the distribution of pixel values. If a model that sees only
-that distribution (L*a*b* histograms, hist_features.py) separates the habitat
-groups as well as the network does on A3_h1 images, the network's A3_h1 drop is
-a genuine loss of spatial information, not the backbone being confused by
-unnatural images.
-
-Baseline: predicts the 10-habitat share distribution (soft-label cross-entropy),
-a 1-hidden-layer MLP, trained on the network's own 3 folds
-(train on two test folds, predict the third; 10% of training families held out
-for early stopping). Then the same group-pair AUCs as group_ablation.py, family
-bootstrap B=500 with the same draws, paired CIs for network minus baseline.
-"""
 import os
 os.environ.setdefault("KMP_AFFINITY", "disabled")
 import gc
@@ -24,6 +10,8 @@ import torch
 
 torch.set_num_threads(4)
 from paths import PROJECT_ROOT, RUNS_DIR
+
+# ── Settings ─────────────────────────────────────────────────────────────────
 ROOT = PROJECT_ROOT
 SP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 os.makedirs(SP, exist_ok=True)
@@ -36,12 +24,14 @@ CONDS = ["reference", "A3_h1_r1", "A3_h1_r2", "A3_h1_r3"]
 FEAT = sys.argv[1] if len(sys.argv) > 1 else "crops"
 CHUNKS = {"crops": "hist_crop_chunks", "whole": "hist_chunks"}[FEAT]
 
+# ── Histogram features ───────────────────────────────────────────────────────
 stems = np.load(f"{SP}/hist_stems.npy", allow_pickle=True)
 X = np.concatenate([np.load(p) for p in sorted(glob.glob(f"{SP}/{CHUNKS}/*.npy"))])
 assert len(X) == len(stems), (len(X), len(stems))
 pos = {s: i for i, s in enumerate(stems)}
 N = len(stems)
 
+# ── Network predictions ──────────────────────────────────────────────────────
 # network outputs (reference + A3_h1 seeds), labels, family, fold - aligned to stems
 net = {}
 H = np.zeros((N, 10), np.float32)
@@ -64,7 +54,7 @@ for model in ("main", "sham"):
     net[model] = out
 assert (fold >= 0).all()
 
-# ---- baseline fits ----
+# ── Baseline fits ────────────────────────────────────────────────────────────
 def fit_predict(kind, Xtr, Ytr, Xva, Yva, Xte, seed=0):
     torch.manual_seed(seed)
     d = Xtr.shape[1]
@@ -99,6 +89,7 @@ def fit_predict(kind, Xtr, Ytr, Xva, Yva, Xte, seed=0):
         return torch.softmax(m(torch.from_numpy(Xte)), 1).numpy().astype(np.float64), best, ep
 
 
+# ── Feature subset ───────────────────────────────────────────────────────────
 # layout: 512 joint bins, then per channel (L, a, b, chroma) 32 bins + mean, std + 5 percentiles
 is_bin = np.r_[np.ones(512, bool), np.tile(np.r_[np.ones(32, bool), np.zeros(7, bool)], 4)]
 assert len(is_bin) == X.shape[1]
@@ -115,6 +106,8 @@ elif SUBSET == "ab":
 if SUBSET != "all":
     FEAT = f"{FEAT}_{SUBSET}"
 print("features", FEAT, Xl.shape, flush=True)
+
+# ── Fit per fold ─────────────────────────────────────────────────────────────
 base = {"mlp": np.zeros((N, 10))}
 fit_log = []
 for k in range(3):
@@ -132,7 +125,7 @@ for k in range(3):
         fit_log.append({"fold": k, "kind": kind, "val_ce": vl, "epochs": ep})
         print(f"fold {k} {kind}: val CE {vl:.4f} ({ep} epochs)", flush=True)
 
-# ---- group-pair AUCs ----
+# ── Group-pair AUCs ──────────────────────────────────────────────────────────
 fams = sorted(set(fam))
 fam2i = {f: i for i, f in enumerate(fams)}
 fidx = np.array([fam2i[f] for f in fam], np.int32)
@@ -168,12 +161,14 @@ def pair_aucs(prob):
     return P, BT
 
 
+# ── AUCs per model ───────────────────────────────────────────────────────────
 res = {"base_mlp": pair_aucs(base["mlp"])}
 for model in ("main", "sham"):
     res[f"{model}_clean"] = pair_aucs(net[model]["reference"])
     seeds = [pair_aucs(net[model][f"A3_h1_r{r}"]) for r in (1, 2, 3)]
     res[f"{model}_h1"] = (np.mean([s[0] for s in seeds], 0), np.mean([s[1] for s in seeds], 0))
 
+# ── Write ────────────────────────────────────────────────────────────────────
 ci = lambda x: np.percentile(x, [2.5, 97.5], axis=-1)
 out = {"pairs": [[GN[a], GN[b]] for a, b in PAIRS], "fit_log": fit_log, "n": int(N), "rows": {}, "diffs": {}}
 for name, (P, BT) in res.items():
@@ -193,6 +188,7 @@ out["features"] = FEAT
 np.save(f"{SP}/hist_pred_{FEAT}_mlp.npy", base["mlp"])
 json.dump(out, open(f"{SP}/hist_baseline_{FEAT}.json", "w"), indent=1)
 
+# ── Print summary ────────────────────────────────────────────────────────────
 print(f"\n{'pair':42s}" + "".join(f"{r:>12s}" for r in res))
 for p, (a, b) in enumerate(PAIRS):
     print(f"{GN[a] + ' vs ' + GN[b]:42s}" + "".join(f"{res[r][0][p]:12.3f}" for r in res))

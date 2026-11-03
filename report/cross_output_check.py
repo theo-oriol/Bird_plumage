@@ -1,11 +1,3 @@
-"""Cross-output specificity check, all habitats, clean (reference) images.
-
-For each target habitat t: AUC of "t present" (share > 0) ranked by each of the
-10 regression outputs -> a 10x10 matrix per model. Then a paired family
-bootstrap (B=500) of own output minus the best other output: if the own output
-is not clearly better, the column's AUC is mostly a signal shared with a
-correlated habitat. One model in memory at a time.
-"""
 import os
 import gc
 import json
@@ -15,6 +7,8 @@ import numpy as np
 from sklearn.metrics import roc_auc_score
 
 from paths import RUNS_DIR, LABELS_JSON
+
+# ── Settings ─────────────────────────────────────────────────────────────────
 BASE = RUNS_DIR
 SP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 os.makedirs(SP, exist_ok=True)
@@ -22,6 +16,7 @@ names = json.load(open(LABELS_JSON))
 NH, B, SEED = 10, 500, 12345
 
 
+# ── Helpers ──────────────────────────────────────────────────────────────────
 def load(model):
     S, H, F = [], [], []
     for k in range(3):
@@ -35,6 +30,7 @@ def load(model):
     return np.concatenate(S), np.concatenate(H), np.array(F)
 
 
+# ── Per model ────────────────────────────────────────────────────────────────
 out = {"habitat_names": names, "B": B}
 for model in ("main", "sham"):
     t0 = time.time()
@@ -59,5 +55,6 @@ for model in ("main", "sham"):
     del S, H, F, W
     gc.collect()
 
+# ── Write ────────────────────────────────────────────────────────────────────
 json.dump(out, open(f"{SP}/cross_output_check.json", "w"))
 print("wrote cross_output_check.json")

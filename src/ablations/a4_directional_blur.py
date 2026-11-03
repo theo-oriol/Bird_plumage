@@ -1,21 +1,3 @@
-"""A4 - flou directionnel (protocole §3, pipeline step 4).
-
-A box filter along one axis only: theta=0 degrees smooths along the body
-axis (birds are photographed lying horizontally, so that's the image's
-x-axis), theta=90 degrees smooths across it (y-axis). Applied at image
-level, before cropping, so the kernel always has real neighbourhood to
-average over (a kernel up to 101px wide would replicate-pad almost half a
-224px crop if applied after cropping - protocole §2 "Les quatre
-contraintes").
-
-Drawn once per sac (protocole "tire par sac"): both angle and length are
-shared by all 16 crops.
-
-This removes structure in one direction, but also removes real variance/
-energy in the process - it is not a pure "direction" ablation, see
-protocole §3 "A4 - elle retire de la direction, mais aussi de l'energie".
-"""
-
 from __future__ import annotations
 
 from typing import Dict, Tuple
@@ -23,16 +5,17 @@ from typing import Dict, Tuple
 import cv2
 import numpy as np
 
+# ── Settings ─────────────────────────────────────────────────────────────────
 CODE = "A4"
 THETA_CHOICES = (0, 90)
 LENGTH_MIN = 17
 LENGTH_MAX = 101
 
 
+# ── A4 directional blur ──────────────────────────────────────────────────────
 def draw_params(rng: np.random.Generator) -> Dict[str, int]:
     theta = int(THETA_CHOICES[rng.integers(2)])
-    # log-uniform over an odd length in [17, 101] - draw log-uniform in the
-    # continuous range then round to the nearest odd integer.
+    # Length log-uniform in [17, 101], rounded to the nearest odd integer
     log_l = rng.uniform(np.log(LENGTH_MIN), np.log(LENGTH_MAX))
     length = int(round(np.exp(log_l)))
     if length % 2 == 0:
@@ -50,6 +33,7 @@ def apply(rgb_uint8: np.ndarray, theta: int, length: int) -> np.ndarray:
     return blurred
 
 
+# ── Run as a script ──────────────────────────────────────────────────────────
 if __name__ == "__main__":
     rng = np.random.default_rng(0)
     canvas = rng.integers(0, 256, size=(256, 256, 3), dtype=np.uint8)

@@ -1,8 +1,3 @@
-"""Regression-head counterpart of the classification-AUC benchmark: same
-per-habitat AUC-per-condition table, same specialization heatmap (main) and
-reference curve chart (sham), but scored on reg_prob instead of cls_prob.
-Sequential sections, each freed before the next loads, so only one model's
-data is ever resident in memory at a time."""
 import os
 import gc
 import pickle
@@ -16,6 +11,8 @@ from scipy.stats import linregress, mannwhitneyu
 from sklearn.metrics import roc_auc_score
 
 from paths import RUNS_DIR, LABELS_JSON
+
+# ── Paths ────────────────────────────────────────────────────────────────────
 BASE = RUNS_DIR
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 os.makedirs(OUT, exist_ok=True)
@@ -25,6 +22,7 @@ bins = np.arange(0, 10) / 10
 centers = bins + 0.05
 
 
+# ── Helpers ──────────────────────────────────────────────────────────────────
 def per_habitat_auc_table(df):
     out = {}
     for cond in sorted(df["condition_name"].unique()):
@@ -40,7 +38,7 @@ def per_habitat_auc_table(df):
     return out
 
 
-# ---------------- section A: main model ----------------
+# ── Section A: main model ────────────────────────────────────────────────────
 print("=== main: loading ===", flush=True)
 with open(f"{BASE}/main_fold0/eval/predictions.pkl", "rb") as f:
     d0 = pickle.load(f)
@@ -89,6 +87,7 @@ for cond in all_conditions:
 
 json.dump({"conditions": heatmap_results, "habitat_names": hab_names}, open(f"{OUT}/summary_stats_reg.json", "w"))
 
+# ── Slope heatmap ────────────────────────────────────────────────────────────
 cond_order = ["reference", "A1", "A2", "A5", "A7"] + \
     [f"A3_h{h}_r{r}" for h in (56, 16, 4, 1) for r in (1, 2, 3)] + \
     [f"A4_theta{t}_L{l}" for t in (0, 90) for l in (17, 41, 101)] + \
@@ -118,7 +117,7 @@ del df_main, ref_df, gt_full, gt_bin_full
 gc.collect()
 print("=== main: done, freed ===", flush=True)
 
-# ---------------- section B: sham model, plain folds (table) ----------------
+# ── Section B: sham model, plain folds (table) ───────────────────────────────
 print("=== sham (plain folds): loading ===", flush=True)
 with open(f"{BASE}/sham_fold0/eval/predictions.pkl", "rb") as f:
     d0 = pickle.load(f)
@@ -139,7 +138,7 @@ json.dump({"habitat_names": hab_names, "data": {"main": main_table, "sham": sham
           open(f"{OUT}/auc_per_habitat_per_condition_reg.json", "w"))
 print("wrote auc_per_habitat_per_condition_reg.json")
 
-# ---------------- section C: sham model, reseed_a7check fold2 (reference curve) ----------------
+# ── Section C: sham model, reseed_a7check fold2 (reference curve) ────────────
 print("=== sham (reseed_a7check): loading ===", flush=True)
 with open(f"{BASE}/sham_fold0/eval/predictions.pkl", "rb") as f:
     d0 = pickle.load(f)

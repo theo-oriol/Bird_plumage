@@ -1,14 +1,3 @@
-"""Ablation effects within subsets, measured with the 5 group AUCs of 5.1. Main model only.
-
-Subsets: views (Back/Belly/Side, all specimens) and sexes (M/F, species with both
-sexes) for 6.4; dimorphism tertile, tertile x sex and tertile x sex x view for
-6.5 (species with both sexes and a dimorphism index, tertiles as sex_dimorph.py).
-For each subset and ablation: 5 group AUCs (main group = G vs. all others, score
-= summed output) on ablated minus clean images of the same subset (A6: same
-birds; A3 seeds averaged). Saves the point mean change over the 5 groups and its
-500 bootstrap draws (same family draws everywhere), so any paired contrast can be
-computed afterwards (ablation_subsets_groups.npz / .json).
-"""
 import gc
 import json
 import pickle
@@ -19,6 +8,8 @@ import pandas as pd
 from svlib import BASE, SP, B, GN, parse_stems, bootstrap_counts, make_wauc, group_ovr
 
 from paths import DIMORPHISM_CSV
+
+# ── Settings ─────────────────────────────────────────────────────────────────
 DIM = DIMORPHISM_CSV
 SEED_GROUPS = {f"A3_h{h}": [f"A3_h{h}_r{r}" for r in (1, 2, 3)] for h in (56, 16, 4, 1)}
 SINGLE = ["A1", "A2", "A5", "A7", "A4_theta0_L17", "A4_theta0_L41", "A4_theta0_L101",
@@ -34,10 +25,12 @@ if MODE == "viewsex":
     SUBSETS = [f"{s}_{v}" for s in SEXES for v in VIEWS]
 OUTN = "ablation_subsets_groups" if MODE == "all" else f"ablation_subsets_groups_{MODE}"
 
+# ── Dimorphism tertiles ──────────────────────────────────────────────────────
 dim = pd.concat([pd.read_csv(DIM.format(v)).set_index("species").dimorphism.rename(v) for v in ("back", "belly")], axis=1)
 dim["index"] = dim.mean(1, skipna=False)
 dim = dim.dropna()
 
+# ── Load predictions ─────────────────────────────────────────────────────────
 t0 = time.time()
 parts = []
 for k in range(3):
@@ -60,6 +53,7 @@ tert = pd.cut(dim.loc[sp, "index"], [-np.inf, q[0], q[1], np.inf], labels=list(T
 del r0
 print(f"loaded ({time.time() - t0:.0f}s), cuts {np.round(q, 3)}", flush=True)
 
+# ── Arrays per condition ─────────────────────────────────────────────────────
 data = {}
 for cond, sub in df.groupby("condition_name", sort=True):
     data[cond] = {"stem": sub.stem.to_numpy(), "fidx": sub.family.map(fam2i).to_numpy(np.int32),
@@ -71,6 +65,7 @@ del df
 gc.collect()
 
 
+# ── Subsets ──────────────────────────────────────────────────────────────────
 def mask(dd, s):
     if s in VIEWS:
         return dd["view"] == s
@@ -91,6 +86,7 @@ def run(dd, m):
     return group_ovr(dd["H"][m], dd["S"][m].astype(np.float64), dd["fidx"][m], wauc)
 
 
+# ── Ablation cost per subset ─────────────────────────────────────────────────
 ref = data["reference"]
 ref_pos = {s: i for i, s in enumerate(ref["stem"])}
 rows, boots, n_groups = {}, {}, {}
@@ -123,6 +119,7 @@ for s in SUBSETS:
     gc.collect()
     print(f"  {s}: n={rows[s]['reference']['n']} clean {rows[s]['reference']['mean']:.3f}  A1 {rows[s]['A1']['mean_delta']:+.3f}  ({time.time() - t1:.0f}s)", flush=True)
 
+# ── Write ────────────────────────────────────────────────────────────────────
 np.savez_compressed(f"{SP}/{OUTN}.npz", **boots)
 json.dump({"rows": rows, "subsets": SUBSETS, "ablations": ROWS, "groups": GN, "cuts": q.tolist(), "B": B,
            "n_species": {t: int((tert == t).sum()) for t in TERTS}}, open(f"{SP}/{OUTN}.json", "w"))

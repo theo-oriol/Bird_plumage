@@ -1,14 +1,9 @@
-"""The two prediction heads (protocole §1): same architecture, separate
-weights, reading the same pooled vector. cls_head's logits go through a
-sigmoid + BCE (presence per habitat); reg_head's go through a softmax + KL
-(the full habitat distribution).
-"""
-
 from __future__ import annotations
 
 import torch.nn as nn
 
 
+# ── Heads ────────────────────────────────────────────────────────────────────
 def _mlp_head(feat_dim: int, num_classes: int, dropout: float) -> nn.Module:
     return nn.Sequential(
         nn.Linear(feat_dim, feat_dim // 2),

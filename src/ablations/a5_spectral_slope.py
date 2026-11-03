@@ -1,46 +1,10 @@
-"""A5 - pente du spectre de Fourier (protocole §3 et §4 "constantes remesurees").
-
-Regrades the radial amplitude spectrum of the crop towards a fixed target
-slope alpha0, phase unchanged, same family of tools as SHINE's sfMatch
-(Willenbockel et al. 2010, cited in the protocol's references). Concretely:
-every frequency bin's magnitude is multiplied by a positive real gain, so
-phase is untouched by construction, and the gain is the same for R, G and B
-- it is derived once from the G channel's own radial profile (protocole
-§3/§8: "ajustee sur le canal G").
-
-Two target slopes, not one, because the 128px crops are resampled to 224px
-before reaching this step and that resampling itself changes the apparent
-spectral slope (protocole §4 explains why at length: the median blur k=15
-becomes an effective 26px kernel after the 128->224 resize, which is why the
-128-crop target is steeper). Both numbers are given directly by the
-protocol (measured on 120 specimens, band 2-9 cycles/crop) - not re-derived
-here.
-
-The target actually used is that reference value plus a small uniform
-jitter (+/- ALPHA_JITTER), drawn fresh per crop: apply()'s regrade hits its
-own target almost exactly in float precision, but the final uint8
-clip/quantize step can leave a small, reproducible residual
-(alpha_after - target_alpha) on images with more clipping (measured on 150
-real crops: std ~0.005, worst case ~0.025 out of a target of ~1.49-2.19) -
-a fixed target would make that residual a fixed function of image content,
-which is exactly the kind of stable, potentially class-correlated leftover
-signal an ablation is supposed to remove, not introduce. Jittering the
-target decorrelates the residual from image content the same way A3's
-severity and A4's angle/length are drawn randomly rather than fixed,
-instead of leaving A5 as the one CIELAB/spectral-group ablation with no
-drawn parameter at all.
-
-Applied per crop (never per sac), after A3 if both are drawn (protocole §8:
-A3 does not touch the histogram, so A5 sees whatever spectrum A3 left it,
-which is the intended behaviour).
-"""
-
 from __future__ import annotations
 
 from typing import Dict, Tuple
 
 import numpy as np
 
+# ── Settings ─────────────────────────────────────────────────────────────────
 CODE = "A5"
 BAND_LOW = 2.0
 BAND_HIGH = 9.0
@@ -50,6 +14,7 @@ ALPHA_JITTER = 0.1  # +/- this, uniform, added to the reference target - see mod
 ANCHOR_RADIUS = BAND_LOW  # the gain is anchored so it leaves this radius untouched
 
 
+# ── Spectrum helpers ─────────────────────────────────────────────────────────
 def _radial_index(size: int) -> np.ndarray:
     freqs = np.fft.fftshift(np.fft.fftfreq(size) * size)
     fy, fx = np.meshgrid(freqs, freqs, indexing="ij")
@@ -64,22 +29,8 @@ def _radial_average(magnitude: np.ndarray, radial_idx: np.ndarray, max_r: int) -
     return sums / counts
 
 
+# OLS log-log slope of a radial profile; NaN if the band has no energy (only logged)
 def _alpha_from_profile(profile: np.ndarray, radii: np.ndarray, band=(BAND_LOW, BAND_HIGH)) -> float:
-    """The OLS log-log slope fit, factored out of measure_alpha() so apply()
-    can reuse a profile it already computed instead of recomputing it via a
-    second, redundant fft2 of the same data (see apply()'s docstring).
-
-    Returns NaN, not a crash, when `profile` has no positive energy
-    anywhere in the band - a real case, not just a hypothetical: a crop
-    that lands entirely on background (or any other spatially-uniform
-    region) has a spectrum that's zero everywhere off DC, and a regraded
-    *output* can end up uniform too, if the gain needed to hit a jittered
-    target_alpha is extreme enough to clip most of the crop to a flat 0 or
-    255 - both leave nothing in-band to fit a slope to. This crashed a real
-    training run (np.polyfit on an empty vector, TypeError) before this
-    guard existed. Safe to return NaN rather than some placeholder number:
-    alpha_before/alpha_after are diagnostic metadata only, never fed back
-    into the gain computation or the output pixels themselves."""
     in_band = (radii >= band[0]) & (radii <= band[1]) & (profile > 0)
     if not np.any(in_band):
         return float("nan")
@@ -89,11 +40,9 @@ def _alpha_from_profile(profile: np.ndarray, radii: np.ndarray, band=(BAND_LOW, 
     return float(-slope)
 
 
+# ── Measure and apply ────────────────────────────────────────────────────────
+# Radial-average slope of the G channel in the band, OLS in log-log space (cf. SHINE, Willenbockel 2010)
 def measure_alpha(crop_uint8: np.ndarray, band=(BAND_LOW, BAND_HIGH)) -> float:
-    """Fit the current radial-average slope of the G channel in the given
-    band by ordinary least squares in log-log space. Used for logging/
-    diagnostics (figures, benchmark script) and by apply() for alpha_after
-    (the *output*'s spectrum, necessarily new - nothing to reuse there)."""
     g = crop_uint8[..., 1].astype(np.float64)
     size = g.shape[0]
     spectrum = np.abs(np.fft.fftshift(np.fft.fft2(g)))
@@ -114,15 +63,7 @@ def apply(crop_uint8: np.ndarray, target_alpha: float) -> Tuple[np.ndarray, Dict
     g_fft = np.fft.fftshift(np.fft.fft2(g))
     magnitude = np.abs(g_fft)
     profile = _radial_average(magnitude, radial_idx, max_r)
-    # alpha_before from the profile just computed above - measure_alpha()
-    # would redo the exact same fft2/fftshift/abs/radial_average of this
-    # same G channel just to get back to the same profile; a batched
-    # version of this across all 16 crops was tried and measured *slower*
-    # than looping (numpy's fft2 with a non-default `axes` batch dimension
-    # is consistently slower than N individual calls for this shape, even
-    # with scipy.fft's multithreaded backend) - this redundant-computation
-    # removal is the one FFT-count reduction here that actually measured
-    # faster.
+    # Reuse the profile computed above instead of a second FFT
     alpha_before = _alpha_from_profile(profile, radii)
 
     anchor_r = int(round(ANCHOR_RADIUS))
@@ -151,10 +92,9 @@ def apply(crop_uint8: np.ndarray, target_alpha: float) -> Tuple[np.ndarray, Dict
     return out_uint8, meta
 
 
+# ── Target slope ─────────────────────────────────────────────────────────────
+# Reference slope for this crop size (measured on 120 specimens): centre of the jittered draw
 def target_alpha_for_crop_source(source_size: int) -> float:
-    """The protocol's own reference value (measured on 120 specimens) for
-    this crop size - the *centre* draw_target_alpha() jitters around, not
-    what apply() is actually called with anymore (see module docstring)."""
     if source_size == 224:
         return TARGET_ALPHA_224
     if source_size == 128:
@@ -162,19 +102,16 @@ def target_alpha_for_crop_source(source_size: int) -> float:
     raise ValueError(f"A5 only has a target for 128/224 source crops, got {source_size}")
 
 
+# Target slope for this crop size, jittered by +/- ALPHA_JITTER (uniform, per crop)
 def draw_target_alpha(source_size: int, rng: np.random.Generator) -> float:
-    """The reference target for this crop size, jittered by
-    +/- ALPHA_JITTER (uniform, drawn fresh per crop) - what chain.py
-    actually calls apply() with. See module docstring for why."""
     base = target_alpha_for_crop_source(source_size)
     return base + float(rng.uniform(-ALPHA_JITTER, ALPHA_JITTER))
 
 
+# ── Run as a script ──────────────────────────────────────────────────────────
 if __name__ == "__main__":
     rng = np.random.default_rng(0)
-    # blocky upsampled noise, not pure white noise - it has real low-frequency
-    # structure, so it has a measurable slope to regrade in the first place
-    # (pure white noise is already flat: alpha ~ 0).
+    # Blocky upsampled noise has a measurable slope (white noise is flat)
     base = rng.integers(0, 256, size=(28, 28, 3)).astype(np.uint8)
     crop = np.kron(base, np.ones((8, 8, 1), dtype=np.uint8))
 

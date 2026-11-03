@@ -1,13 +1,3 @@
-"""Does the female advantage grow with sexual dimorphism? Clean images, both models.
-
-Species with both sexes (as in sex_view_check.py). Dimorphism of a species =
-mean of its back and belly indices (data/dimorphism/dimorphism_species_*.csv:
-male-female plumage distance relative to within-sex distances; ~1 = monomorphic).
-Species are cut into tertiles of that index. Within each tertile: AUCs on male
-images and on female images (per habitat + group pairs), F - M with family
-bootstrap (same draws throughout). Trend = (F - M in top tertile) - (F - M in
-bottom tertile), paired CI.
-"""
 import gc
 import json
 import numpy as np
@@ -15,11 +5,14 @@ import pandas as pd
 from svlib import SP, B, load, bootstrap_counts, make_wauc, metrics, ci
 
 from paths import DIMORPHISM_CSV
+
+# ── Dimorphism index ─────────────────────────────────────────────────────────
 DIM = DIMORPHISM_CSV
 dim = pd.concat([pd.read_csv(DIM.format(v)).set_index("species").dimorphism.rename(v) for v in ("back", "belly")], axis=1)
 dim["index"] = dim.mean(1, skipna=False)
 dim = dim.dropna()  # 1,623 species have no index (fewer than 2 images in a sex)
 
+# ── Per model ────────────────────────────────────────────────────────────────
 out = {"B": B}
 counts = None
 for model in ("main", "sham"):
@@ -68,6 +61,7 @@ for model in ("main", "sham"):
     del d
     gc.collect()
 
+# ── Write ────────────────────────────────────────────────────────────────────
 json.dump(out, open(f"{SP}/sex_dimorph.json", "w"), indent=1)
 for model in ("main", "sham"):
     print(f"== {model}  cuts {np.round(out[model]['cuts'], 3)}")

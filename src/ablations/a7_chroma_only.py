@@ -1,24 +1,3 @@
-"""A7 - chromaticite seule, L* fixe (protocole §3).
-
-Standalone: no dependency on the rest of the project (only numpy +
-scikit-image + zstandard). The CIELAB conversion helpers and
-chroma_isoluminant() are copied from src/color.py rather than imported
-from it - chroma_isoluminant() is copied with one deliberate change, see
-its docstring below.
-
-The exact complement of A1: L* is fixed to a constant (50) on the mask,
-(a*, b*) are kept. No drawn parameter - deterministic given the specimen,
-so it is precomputed once offline (scripts/build_a7_cache.py) instead of
-online, same reasoning as A1/A2.
-
-Some (a*, b*) pairs at a fixed L* fall outside the sRGB gamut and get
-clipped on conversion back to RGB - chroma_isoluminant() measures and
-returns that loss, which the offline build script keeps (one row per
-specimen in a gamut-metadata CSV, see scripts/build_a7_cache.py) rather
-than silently discard, because protocole §3 is explicit that A7 must not
-be described as exactly chroma-preserving without that number attached.
-"""
-
 from __future__ import annotations
 
 import io
@@ -30,6 +9,7 @@ import zstandard as zstd
 from skimage import color
 
 
+# ── Array I/O ────────────────────────────────────────────────────────────────
 _DECOMPRESSOR = zstd.ZstdDecompressor()
 
 
@@ -49,6 +29,7 @@ def _write_array_zst(path: Path, array: np.ndarray, level: int = 12) -> None:
         f.write(compressed)
 
 
+# ── Input checks ─────────────────────────────────────────────────────────────
 def _check_rgb(rgb: np.ndarray) -> np.ndarray:
     arr = np.asarray(rgb, dtype=np.float64)
     if arr.ndim != 3 or arr.shape[-1] != 3:
@@ -71,15 +52,14 @@ def _check_foreground(mask: Optional[np.ndarray], shape: Tuple[int, int]) -> np.
     return mask
 
 
+# ── CIELAB conversion ────────────────────────────────────────────────────────
+# sRGB in [0, 1] -> CIELAB (D65)
 def rgb_to_lab(rgb: np.ndarray) -> np.ndarray:
-    """Convert an sRGB image in [0, 1] to CIE Lab under D65."""
-
     return color.rgb2lab(_check_rgb(rgb), illuminant="D65")
 
 
+# CIELAB (D65) -> sRGB in [0, 1], clipped
 def lab_to_rgb(lab: np.ndarray) -> np.ndarray:
-    """Convert CIE Lab under D65 to clipped sRGB in [0, 1]."""
-
     lab = np.asarray(lab, dtype=np.float64)
     if lab.ndim != 3 or lab.shape[-1] != 3:
         raise ValueError(f"Expected H x W x 3 Lab array, got {lab.shape}")
@@ -88,29 +68,13 @@ def lab_to_rgb(lab: np.ndarray) -> np.ndarray:
     return np.clip(rgb, 0.0, 1.0)
 
 
+# ── A7 transform ─────────────────────────────────────────────────────────────
+# Fix foreground L*; returns (output_rgb, input_lab, metadata), metadata = chroma lost to the gamut
 def chroma_isoluminant(
     rgb: np.ndarray,
     foreground: Optional[np.ndarray] = None,
     luminance_l: float = 50.0,
 ) -> Tuple[np.ndarray, np.ndarray, Dict[str, object]]:
-    """Set foreground L* to one value and audit realised chroma after sRGB conversion.
-
-    Constant-L* Lab colours can lie outside the sRGB gamut.  Conversion then
-    reduces chroma in a hue-dependent way.  The returned metadata quantifies
-    that loss overall; callers must not describe this arm as perfectly
-    chroma-preserving without consulting those fields. (This standalone copy
-    drops the original's per-Delhey-category breakdown, which needed the full
-    CN11/Delhey classifier - nothing in this project ever reads it; see A6 for
-    that classifier if you need it.)
-
-    Returns ``(output_rgb, input_lab, metadata)`` - ``input_lab`` is the full
-    rgb_to_lab() conversion of the *input* canvas, before L* is overridden.
-    It's the single most expensive step in this function on a 2024x2024
-    canvas, so build() below caches it alongside the ablated RGB
-    (scripts/build_a7_cache.py) instead of leaving every future re-run, or
-    any other consumer that needs this same specimen's Lab, to redo it.
-    """
-
     if not 0.0 <= luminance_l <= 100.0:
         raise ValueError("luminance_l must lie in [0, 100]")
     arr = _check_rgb(rgb)
@@ -159,13 +123,13 @@ def chroma_isoluminant(
     return output, lab, metadata
 
 
+# ── A7 build and cache ───────────────────────────────────────────────────────
 CODE = "A7"
 FIXED_L = 50.0
 
 
+# Returns (ablated_rgb_uint8, input_lab_float32, metadata)
 def build(rgb_uint8: np.ndarray, mask: np.ndarray) -> Tuple[np.ndarray, np.ndarray, Dict[str, object]]:
-    """Returns (ablated_rgb_uint8, input_lab_float32, metadata) - see
-    chroma_isoluminant()'s docstring for why the input Lab is returned too."""
     rgb01 = rgb_uint8.astype(np.float64) / 255.0
     out01, lab, meta = chroma_isoluminant(rgb01, foreground=mask, luminance_l=FIXED_L)
     out_uint8 = np.clip(out01 * 255.0, 0, 255).astype(np.uint8)
@@ -187,13 +151,8 @@ def read_canvas(dataset_a7_dir: Path, stem: str) -> np.ndarray:
     return _read_array_zst(path)
 
 
+# Cache the input Lab (float32, HxWx3) next to the A7 image, so it is never recomputed
 def write_lab_cache_entry(dataset_a7_dir: Path, stem: str, lab_float32: np.ndarray) -> None:
-    """Cache the specimen's full-canvas input Lab (float32, HxWx3) next to
-    the ablated RGB - the expensive rgb_to_lab() conversion this build()
-    already pays for, saved so no future reader needs to redo it from the
-    raw RGB (this project's other consumers of a specimen's Lab - A1's
-    achromatic_raw(), A6's classify_delhey_rgb() - each currently run their
-    own rgb_to_lab() on the exact same source canvas)."""
     _write_array_zst(Path(dataset_a7_dir) / f"{stem}.lab.zst", lab_float32)
 
 
@@ -209,11 +168,9 @@ def read_lab_cache_entry(dataset_a7_dir: Path, stem: str) -> np.ndarray:
     return _read_array_zst(path)
 
 
+# ── Run as a script ──────────────────────────────────────────────────────────
+# Synthetic specimen for the example below: colour patches on a black background
 def _demo_canvas(size: int = 256) -> Tuple[np.ndarray, np.ndarray]:
-    """A synthetic specimen for the __main__ example below: a few solid
-    colour patches on a black background (background = pure zeros, the
-    same "fond noir" convention as the real dataset; the mask is just "any
-    channel nonzero")."""
     rng = np.random.default_rng(0)
     canvas = np.zeros((size, size, 3), dtype=np.uint8)
     canvas[40 : size - 40, 40 : size - 40] = rng.integers(

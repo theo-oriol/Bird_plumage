@@ -1,18 +1,4 @@
 #!/usr/bin/env python3
-"""Evaluate one trained fold against the full §7 condition grid.
-
-    python evaluate.py --config configs/eval.yaml \
-        --checkpoint runs/main_fold0/checkpoints/best.pt --fold 0
-
-Writes, under runs/<checkpoint's run name>/eval/:
-    predictions.csv   one row per (image, condition): raw probabilities
-    summary.csv        one row per condition: macro AUC/AP, mean KL, paired
-                        mean absolute error vs reference, bootstrap delta-AUC
-
-Combining the three folds' summaries by inverse variance (protocole §7,
-last paragraph) is a separate, tiny step — src/evaluation/combine_folds.py —
-since it only runs once all three folds have been evaluated.
-"""
 
 from __future__ import annotations
 
@@ -23,6 +9,7 @@ from src.configio import load_config
 from src.evaluation.run_eval import collect_predictions, summarise
 
 
+# ── Main ─────────────────────────────────────────────────────────────────────
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="configs/eval.yaml")

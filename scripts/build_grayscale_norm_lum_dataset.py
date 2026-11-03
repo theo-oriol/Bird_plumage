@@ -66,8 +66,8 @@ def lab_to_rgb(lab: np.ndarray) -> np.ndarray:
 
 
 # ── SHINE lumMatch / histMatch ───────────────────────────────────────────────
+# Rescale to mean M and std S (a flat image is set to M), optionally clipped to [0, vmax]
 def lum_match(values: np.ndarray, M: float, S: float, vmax: float, clip: bool = True) -> np.ndarray:
-    """Rescale values to mean M and std S (a flat image is set to M)."""
     m, s = values.mean(), values.std()
     if s < 1e-8:
         return np.full_like(values, M)
@@ -75,15 +75,14 @@ def lum_match(values: np.ndarray, M: float, S: float, vmax: float, clip: bool = 
     return np.clip(out, 0.0, vmax) if clip else out
 
 
+# Bin index of each value, n_bins bins evenly spaced on [0, vmax]
 def quantise(values: np.ndarray, n_bins: int, vmax: float) -> np.ndarray:
-    """Bin index of each value, n_bins bins evenly spaced on [0, vmax]."""
     step = vmax / (n_bins - 1)
     return np.clip(np.rint(values / step), 0, n_bins - 1).astype(np.int64)
 
 
+# Integer counts proportional to pdf summing to exactly n (largest remainder), for this image's n
 def counts_from_pdf(pdf: np.ndarray, n: int) -> np.ndarray:
-    """Integer counts summing to exactly n, proportional to pdf
-    (largest-remainder method), for this image's own pixel count n."""
     exact = np.asarray(pdf, dtype=np.float64) * n
     counts = np.floor(exact).astype(np.int64)
     short = n - int(counts.sum())
@@ -98,9 +97,8 @@ def counts_from_pdf(pdf: np.ndarray, n: int) -> np.ndarray:
     return counts
 
 
+# Exact histogram match: sort the pixels (random tie-break), give them the target levels in order
 def hist_match_exact(values: np.ndarray, pdf: np.ndarray, vmax: float, rng=None) -> np.ndarray:
-    """Give values exactly the histogram pdf, keeping their rank order
-    (ties broken at random)."""
     n = values.size
     counts = counts_from_pdf(pdf, n)
     rng = np.random.default_rng() if rng is None else rng
@@ -118,8 +116,8 @@ def hist_match_exact(values: np.ndarray, pdf: np.ndarray, vmax: float, rng=None)
 
 # ── Reading L* from this project's format ────────────────────────────────────
 
+# L* of the foreground pixels
 def _l_star_of(canvas: np.ndarray, mask: np.ndarray) -> np.ndarray:
-    """L* of the foreground pixels."""
     lab = rgb_to_lab(canvas.astype(np.float64)[mask] / 255.0)
     return lab[..., 0]
 

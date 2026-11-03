@@ -1,10 +1,3 @@
-"""Section 6.1-6.3 with the 5 habitat groups instead of the 10 habitats. Clean images, both models.
-
-Group AUC as in 5.1: image's main group = G vs. all other images, score = summed
-output of G's habitats. Subsets as in sex_view_check.py (views on the same
-specimens, 3 views = mean output; sexes on species with both) and sex_dimorph.py
-(dimorphism tertiles x sex). Family bootstrap B=500, same draws everywhere.
-"""
 import gc
 import json
 import numpy as np
@@ -12,12 +5,15 @@ import pandas as pd
 from svlib import SP, B, GN, load, bootstrap_counts, make_wauc, group_ovr, ci
 
 from paths import DIMORPHISM_CSV
+
+# ── Dimorphism index ─────────────────────────────────────────────────────────
 DIM = DIMORPHISM_CSV
 dim = pd.concat([pd.read_csv(DIM.format(v)).set_index("species").dimorphism.rename(v) for v in ("back", "belly")], axis=1)
 dim["index"] = dim.mean(1, skipna=False)
 dim = dim.dropna()
 
 
+# ── Helpers ──────────────────────────────────────────────────────────────────
 def arr(sub):
     return np.stack(sub.habitat.to_numpy()).astype(np.float32), np.stack(sub.reg_prob.to_numpy()).astype(np.float64), sub.fidx.to_numpy()
 
@@ -29,6 +25,7 @@ def diff(a, b):
     return {"delta": P.tolist(), "lo": lo.tolist(), "hi": hi.tolist(), "mean": float(np.nanmean(P)), "mean_ci": ci(mb).tolist()}, mb
 
 
+# ── Per model ────────────────────────────────────────────────────────────────
 out = {"groups": GN, "B": B}
 wauc = None
 for model in ("sham", "main"):
@@ -74,4 +71,5 @@ for model in ("sham", "main"):
         per = "  ".join(f"{g[:8]} {x:+.3f}{'*' if (l > 0 or h < 0) else ' '}" for g, x, l, h in zip(GN, v["delta"], v["lo"], v["hi"])) if "delta" in v else ""
         print(f"{k:18s} mean {v['mean']:+.3f} [{v['mean_ci'][0]:+.3f}, {v['mean_ci'][1]:+.3f}]   {per}")
 
+# ── Write ────────────────────────────────────────────────────────────────────
 json.dump(out, open(f"{SP}/sex_groups.json", "w"), indent=1)

@@ -1,4 +1,3 @@
-"""Loss evolution per epoch, main vs sham, mean over the 3 folds with a min-max band."""
 import os
 import numpy as np
 import pandas as pd
@@ -7,12 +6,15 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from paths import RUNS_DIR
+
+# ── Settings ─────────────────────────────────────────────────────────────────
 BASE = RUNS_DIR
 SP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 os.makedirs(SP, exist_ok=True)
 COL = {"main": "#1F7A72", "sham": "#B4622F"}
 INK, MUTED, GRID = "#1C2126", "#5B6470", "#E3E0D7"
 
+# ── Load losses ──────────────────────────────────────────────────────────────
 runs = {}
 for m in ("main", "sham"):
     dfs = []
@@ -22,6 +24,7 @@ for m in ("main", "sham"):
         dfs.append(df)
     runs[m] = dfs
 
+# ── Figure ───────────────────────────────────────────────────────────────────
 panels = [("Total (0.5 KL + 0.5 BCE)", "train_total", "val_loss"),
           ("KL (regression head)", "kl", "val_kl"),
           ("BCE (classification head)", "bce", "val_bce")]

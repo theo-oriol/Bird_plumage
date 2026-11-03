@@ -1,13 +1,13 @@
-"""4.5 check: is detecting a second habitat B among A birds more than 'less typical of A'?
-For each cell (A row, B column), among birds using A: truth = also uses B.
-own = B output; notA = reversed A output; best = best of the 9 non-B outputs (incl. reversed A).
-Family bootstrap of own - best (paired)."""
 import json, numpy as np, svlib
+
+# ── Load ─────────────────────────────────────────────────────────────────────
 d = svlib.load("sham")
 H = np.stack(d.habitat.values).astype(float); P = np.stack(d.reg_prob.values).astype(np.float64)
 fams = np.array(sorted(d.family.unique())); fidx = np.searchsorted(fams, d.family.values)
 del d
 wauc = svlib.make_wauc(svlib.bootstrap_counts(fams))
+
+# ── Compute ──────────────────────────────────────────────────────────────────
 CP = json.load(open(f"{svlib.SP}/copresence_check.json"))
 out = {}
 for a in range(10):
@@ -24,5 +24,7 @@ for a in range(10):
         diff = own_b - bb
         out[f"{a},{b}"] = dict(own=own, notA=na, best=bv, best_k=bk, diff=own - bv,
                                lo=float(np.nanpercentile(diff, 2.5)), hi=float(np.nanpercentile(diff, 97.5)))
+
+# ── Write ────────────────────────────────────────────────────────────────────
 json.dump(out, open(f"{svlib.SP}/copres_baseline.json", "w"))
 print("done", len(out))

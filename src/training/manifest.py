@@ -1,8 +1,3 @@
-"""What gets written to a run directory so the run is traceable later:
-exactly which config produced it, which code, on what data, when. Nothing
-here is used by training itself — it's a record, not a control path.
-"""
-
 from __future__ import annotations
 
 import json
@@ -16,6 +11,7 @@ from typing import Any, Dict
 import torch
 
 
+# ── Run manifest ─────────────────────────────────────────────────────────────
 def _git_commit(repo_dir: Path) -> str | None:
     try:
         out = subprocess.run(

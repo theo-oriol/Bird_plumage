@@ -1,25 +1,3 @@
-"""Position sampling for crops, from the precomputed candidate tables.
-
-Protocole §2 step 5: 8 crops of 128px + 8 crops of 224px, 100% inside the
-mask, positions separated by at least P/2 (P = crop side). Building this from
-scratch per sac would mean scanning the whole 2024x2024 mask at 1px pitch
-every time. Instead, the dataset ships *.cand_128.zst / *.cand_224.zst: every
-admissible position (checked at 1px pitch, no grid) already computed once and
-grouped into P/2-sized grid cells.
-
-The candidate payload layout (confirmed on a real specimen file):
-    payload[0]            -> kind (0 = no admissible window at all, 1 = only
-                              one fallback position, 2 = the general case)
-    payload[1]             -> n, the number of admissible positions
-    payload[2 : 2+n]       -> y coordinates
-    payload[2+n : 2+2n]    -> x coordinates
-    payload[2+2n : 2+3n]   -> the P/2 grid-cell id each position falls into
-
-Drawing at most one position per grid cell (shuffling the cell order first)
-is how the "separation >= P/2" constraint from the protocol is actually
-enforced: two positions in the same P/2 cell cannot both be kept.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -30,6 +8,7 @@ import numpy as np
 from .npy_io import read_array_zst
 
 
+# ── Candidate positions ──────────────────────────────────────────────────────
 def load_candidates(dataset_dir: Path, stem: str, crop_size: int) -> dict:
     path = Path(dataset_dir) / f"{stem}.cand_{crop_size}.zst"
     payload = read_array_zst(path)
@@ -57,9 +36,9 @@ def _parse_candidates(payload: np.ndarray) -> dict:
     }
 
 
+# ── Sampling ─────────────────────────────────────────────────────────────────
+# n_positions top-left corners, one grid cell at a time so draws stay >= P/2 apart
 def sample_positions(candidates: dict, n_positions: int, rng: np.random.Generator) -> List[Tuple[int, int]]:
-    """Draw n_positions (y, x) top-left corners, one grid cell at a time so
-    consecutive draws stay >= P/2 apart, per the sac's own RNG."""
     if candidates.get("edge_case"):
         return [(0, 0)] * n_positions
     if "fallback" in candidates:
@@ -78,8 +57,7 @@ def sample_positions(candidates: dict, n_positions: int, rng: np.random.Generato
         chosen = choices[rng.integers(len(choices))]
         positions.append((int(valid_ys[chosen]), int(valid_xs[chosen])))
 
-    # more crops requested than distinct P/2 cells exist (small specimens):
-    # fall back to plain uniform draws for the remainder.
+    # More crops than P/2 cells (small specimens): uniform draws for the rest
     while len(positions) < n_positions:
         idx = rng.integers(len(valid_ys))
         positions.append((int(valid_ys[idx]), int(valid_xs[idx])))

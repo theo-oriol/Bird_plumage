@@ -31,10 +31,8 @@ VIEW_TEMPLATE = "NEW_Segmented-Aves-{view}-NPY"
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+# Parent of a 'NEW_Segmented-Aves-Back-NPY' folder (where Belly and Side are); raises otherwise
 def _check_back_leaf_and_get_parent(path: Path, config_key: str) -> Path:
-    """Parent of a 'NEW_Segmented-Aves-Back-NPY' folder (where the Belly and
-    Side folders are). Raises if `path` is not such a folder, so nothing is
-    built in the wrong place."""
     expected = path.parent / VIEW_TEMPLATE.format(view="Back")
     if path != expected:
         raise ValueError(
@@ -46,10 +44,8 @@ def _check_back_leaf_and_get_parent(path: Path, config_key: str) -> Path:
 
 
 # ── Crops ────────────────────────────────────────────────────────────────────
+# One item = one specimen's 16 reference crops (one view), normalised for the backbone
 class ReferenceCropsDataset(Dataset):
-    """One item = one specimen's 16 reference crops (one view), normalised
-    for the backbone. Built in DataLoader workers while the GPU runs."""
-
     def __init__(self, stems: List[str], view_dirs: Dict[str, Optional[Path]], run_id: Optional[int] = None):
         self.stems = stems
         self.dataset_dir = view_dirs["dataset_dir"]
@@ -65,8 +61,7 @@ class ReferenceCropsDataset(Dataset):
 
     def __getitem__(self, index: int):
         stem = self.stems[index]
-        # Same seeds as run_eval.py's "reference" condition (same crops);
-        # run_id, if set, gives a different but reproducible flip + crop draw
+        # Same seeds as run_eval.py's reference condition; run_id gives another reproducible draw
         if self.run_id is None:
             geometry_rng = derive_rng("eval-geometry", stem)
             condition_rng = derive_rng("eval-condition", stem, "reference")
@@ -93,9 +88,8 @@ class ReferenceCropsDataset(Dataset):
 
 
 # ── Backbone ─────────────────────────────────────────────────────────────────
+# Pretrained DINOv3-S without LoRA, all weights frozen, eval mode
 def build_raw_backbone(paths_cfg: Dict[str, str], device: torch.device) -> torch.nn.Module:
-    """Pretrained DINOv3-S without LoRA (unlike src/model/backbone.py's
-    build_backbone(), used for training): all weights frozen, eval mode."""
     weights_path = paths_cfg["dinov3_weights"][BACKBONE_NAME]
     backbone = torch.hub.load(
         paths_cfg["dinov3_repo"],

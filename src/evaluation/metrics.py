@@ -1,17 +1,10 @@
-"""The metrics reported per condition (protocole §7): macro AUC, macro
-average precision, mean KL to the true distribution, and mean absolute
-error to the *reference condition's* prediction on the same images (the
-paired comparison, not a signed difference - protocole §7 explains why:
-a signed difference can cancel across classes and hide a real
-reshuffling of probability mass).
-"""
-
 from __future__ import annotations
 
 import numpy as np
 from sklearn.metrics import average_precision_score, roc_auc_score
 
 
+# ── Per-condition metrics ────────────────────────────────────────────────────
 def macro_auc(support: np.ndarray, prob: np.ndarray) -> float:
     scores = []
     for c in range(support.shape[1]):
@@ -43,6 +36,8 @@ def mean_absolute_error_to_reference(pred_dist: np.ndarray, reference_pred_dist:
     return float(np.abs(pred_dist - reference_pred_dist).mean(axis=1).mean())
 
 
+# ── Bootstrap ────────────────────────────────────────────────────────────────
+# Bootstrap variance of delta-AUC, resampling whole families
 def bootstrap_delta_auc(
     support: np.ndarray,
     prob_condition: np.ndarray,
@@ -51,9 +46,6 @@ def bootstrap_delta_auc(
     n_bootstrap: int,
     rng: np.random.Generator,
 ) -> dict:
-    """protocole §7: variance for the inverse-variance fold combination is
-    estimated by bootstrap, resampling by family so images that weren't
-    separated by the fold split aren't treated as independent."""
     point = macro_auc(support, prob_condition) - macro_auc(support, prob_reference)
 
     unique_families = np.unique(families)

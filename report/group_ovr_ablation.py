@@ -1,10 +1,3 @@
-"""Section 5 with the 5 one-vs-rest group AUCs instead of the 10 group pairs.
-
-For every condition: AUC of "main group = G" vs. all other images, score = summed
-output of G's habitats. Change vs. clean images on the same images (A6: same
-birds only; A3 seeds averaged). Family bootstrap B=500, same draws everywhere.
-One model in memory at a time.
-"""
 import gc
 import json
 import pickle
@@ -12,6 +5,8 @@ import time
 import sys
 import numpy as np
 import pandas as pd
+
+# ── Settings ─────────────────────────────────────────────────────────────────
 MODE = sys.argv[1] if len(sys.argv) > 1 else "main"
 from svlib import BASE, SP, B, GN, bootstrap_counts, make_wauc, group_ovr, ci
 
@@ -22,6 +17,7 @@ SINGLE = ["A1", "A2", "A5", "A7",
           "A6_blue", "A6_purple", "A6_red", "A6_yellow", "A6_green", "A6_rufous", "A6_light_brown", "A6_dark_brown"]
 ROWS = SINGLE + list(SEED_GROUPS)
 
+# ── Per model ────────────────────────────────────────────────────────────────
 out = {"groups": GN, "rows": ROWS, "B": B}
 wauc = None
 for model in ("main", "sham"):
@@ -76,7 +72,10 @@ for model in ("main", "sham"):
     gc.collect()
     print(f"{model} done ({time.time() - t0:.0f}s)", flush=True)
 
+# ── Write ────────────────────────────────────────────────────────────────────
 json.dump(out, open(f"{SP}/group_ovr_ablation_{MODE}.json", "w"))
+
+# ── Print summary ────────────────────────────────────────────────────────────
 for model in ("main", "sham"):
     r = out[model]
     print(f"\n== {model}: clean " + " ".join(f"{g} {a:.3f}" for g, a in zip(GN, r["reference"]["auc"])))

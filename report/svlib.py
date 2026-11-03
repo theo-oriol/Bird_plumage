@@ -1,5 +1,3 @@
-"""Shared pieces for the sex / view / dimorphism analyses (same definitions as
-sex_view_check.py and group_ablation.py)."""
 import os
 import gc
 import pickle
@@ -7,6 +5,8 @@ import numpy as np
 import pandas as pd
 
 from paths import RUNS_DIR
+
+# ── Settings ─────────────────────────────────────────────────────────────────
 BASE = RUNS_DIR
 SP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 os.makedirs(SP, exist_ok=True)
@@ -16,6 +16,7 @@ GN = list(GROUPS)
 PAIRS = [(i, j) for i in range(len(GN)) for j in range(i + 1, len(GN))]
 
 
+# ── Loading ──────────────────────────────────────────────────────────────────
 def parse_stems(d):
     p = d.stem.str.split("_", expand=True)
     d["species"], d["sex"], d["view"], d["cat"] = p[0] + "_" + p[1], p[3], p[4], p[6]
@@ -33,6 +34,7 @@ def load(model, conds=("reference",), cols=("stem", "family", "habitat", "reg_pr
     return parse_stems(pd.concat(parts, ignore_index=True))
 
 
+# ── Family bootstrap and AUCs ────────────────────────────────────────────────
 def bootstrap_counts(fams):
     rng = np.random.default_rng(SEED)
     return np.stack([np.bincount(rng.integers(0, len(fams), len(fams)), minlength=len(fams)) for _ in range(B)]).astype(np.float32)
@@ -58,8 +60,8 @@ def make_wauc(counts):
     return wauc
 
 
+# AUCs per habitat (10, if asked) then per group pair (10): point and bootstrap [., B]
 def metrics(H, S, fidx, wauc, habitats=True):
-    """per-habitat AUCs (10, if habitats) then group-pair AUCs (10): point, boots [., B]."""
     nh = 10 if habitats else 0
     P, BT = np.full(nh + 10, np.nan), np.full((nh + 10, B), np.nan)
     for h in range(nh):
@@ -80,11 +82,8 @@ def ci(x):
     return np.nanpercentile(x, [2.5, 97.5], axis=-1)
 
 
+# One-vs-rest AUC per group (5); mode 'main': largest label share, 'presence': share > 0
 def group_ovr(H, S, fidx, wauc, mode="main"):
-    """5 one-vs-rest group AUCs; score = summed output of G's habitats.
-    mode "main": truth = image's main group is G (largest summed label share).
-    mode "presence": truth = summed label share of G > 0 (as per-habitat presence AUC).
-    point [5], boots [5, B]."""
     gshare = np.stack([H[:, GROUPS[g]].sum(1) for g in GN], 1)
     gs = gshare.argmax(1)
     P, BT = np.full(len(GN), np.nan), np.full((len(GN), B), np.nan)

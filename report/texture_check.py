@@ -1,19 +1,10 @@
-"""Is there signal in spatial structure beyond the pixel distribution, within one channel?
-
-Greyscale: network on A1 images (colour removed, lightness and its spatial
-structure kept) vs. the lightness-only histogram model (same crops, no spatial
-structure). Colour: network on A7 images (lightness flattened, colour and its
-structure kept) vs. the colour-only histogram model. Group-pair AUCs, paired
-family bootstrap (same draws as everywhere). A positive gap = structure carries
-signal. It is a conservative estimate: the network on ablated images may also
-under-use what is there (5.3).
-"""
 import gc
 import json
 import pickle
 import numpy as np
 from svlib import BASE, SP, GN, PAIRS, bootstrap_counts, make_wauc, metrics, ci
 
+# ── Load ─────────────────────────────────────────────────────────────────────
 stems = np.load(f"{SP}/hist_stems.npy", allow_pickle=True)
 pos = {s: i for i, s in enumerate(stems)}
 N = len(stems)
@@ -41,6 +32,8 @@ fidx = np.array([fam2i[f] for f in fam], np.int32)
 wauc = make_wauc(bootstrap_counts(fams))
 base = {"L": metrics(H, np.load(f"{SP}/hist_pred_crops_L_mlp.npy"), fidx, wauc, habitats=False),
         "ab": metrics(H, np.load(f"{SP}/hist_pred_crops_ab_mlp.npy"), fidx, wauc, habitats=False)}
+
+# ── Network vs. histogram per channel ────────────────────────────────────────
 out = {"pairs": [[GN[a], GN[b]] for a, b in PAIRS]}
 for model in ("main", "sham"):
     for c, b in (("A1", "L"), ("A7", "ab")):
@@ -57,4 +50,6 @@ for model in ("main", "sham"):
               f"[{mci[0]:+.3f}, {mci[1]:+.3f}]  pairs sig + {nsig_pos} / - {nsig_neg}")
         for p in range(10):
             print(f"    {GN[PAIRS[p][0]]:>24s} vs {GN[PAIRS[p][1]]:<10s} {P[p]:.3f} vs {base[b][0][p]:.3f}  {P[p] - base[b][0][p]:+.3f} [{lo[p]:+.3f}, {hi[p]:+.3f}]")
+
+# ── Write ────────────────────────────────────────────────────────────────────
 json.dump(out, open(f"{SP}/texture_check.json", "w"), indent=1)

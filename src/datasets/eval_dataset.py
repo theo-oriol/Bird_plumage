@@ -1,14 +1,3 @@
-"""The evaluation Dataset (protocole §7): one item = one (image, condition)
-pair, geometry (flip + crop positions) seeded from the image alone so every
-condition sees the exact same crops of the exact same image - that's what
-makes the comparison paired rather than between independent samples.
-
-df covers all three views (Back/Belly/Side, see src/datasets/folds.py) -
-each stem only exists inside its own view's NPY folder, so __getitem__
-looks up which view a given stem belongs to before picking that view's
-directory set (src/view_paths.py).
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -27,6 +16,7 @@ from ..view_paths import resolve_view_dirs
 from .bag_dataset import IMAGENET_MEAN, IMAGENET_STD
 
 
+# ── Evaluation dataset ───────────────────────────────────────────────────────
 class EvalDataset(Dataset):
     def __init__(
         self,
@@ -38,9 +28,7 @@ class EvalDataset(Dataset):
         self.habitats = np.stack(df["habitat"].to_numpy())
         self.stem_to_row = {s: i for i, s in enumerate(self.stems)}
         self.stem_to_view = dict(zip(df["stem"], df["view"]))
-        # one directory set per view (Back/Belly/Side) - each item picks the
-        # one matching its own stem's view, since a stem only exists inside
-        # its own view's NPY folder.
+        # One folder set per view; each stem only exists in its own view's folder
         self.view_dirs = resolve_view_dirs(cfg)
 
         self._fixed = fixed_conditions()

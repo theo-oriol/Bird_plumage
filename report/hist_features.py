@@ -1,13 +1,3 @@
-"""Colour/lightness histogram features of each evaluated bird (all foreground pixels).
-
-This is what survives A3_h1 (pixel shuffle): the pixel value distribution, no
-spatial arrangement. Features per image, in CIELAB (D65):
-  - joint L*a*b* histogram 8x8x8 (normalised)
-  - marginal histograms of L*, a*, b*, chroma, 32 bins each
-  - mean, std, 5/25/50/75/95 percentiles of L*, a*, b*, chroma
-Foreground = non-black pixels (as in the model pipeline); every 2nd pixel in
-each direction. 4 worker processes; written in chunks so a crash loses little.
-"""
 import os
 import sys
 import glob
@@ -16,6 +6,8 @@ import numpy as np
 from multiprocessing import Pool
 
 from paths import PROJECT_ROOT, RUNS_DIR, DATASET_DIR
+
+# ── Paths ────────────────────────────────────────────────────────────────────
 ROOT = PROJECT_ROOT
 sys.path.insert(0, ROOT)
 from src.npy_io import read_canvas  # noqa: E402
@@ -29,6 +21,7 @@ CHUNK = 2000
 Q = [5, 25, 50, 75, 95]
 
 
+# ── Helpers ──────────────────────────────────────────────────────────────────
 def view_of(stem):
     for v in ("Back", "Belly", "Side"):
         if f"_{v}_" in stem:
@@ -53,6 +46,7 @@ def feats(stem):
     return np.concatenate(out).astype(np.float32)
 
 
+# ── Main ─────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     stems = []

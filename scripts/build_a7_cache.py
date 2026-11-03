@@ -131,10 +131,8 @@ def main():
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+# Parent of a 'NEW_Segmented-Aves-Back-NPY' folder (where Belly and Side are); raises otherwise
 def _check_back_leaf_and_get_parent(path: Path, config_key: str) -> Path:
-    """Parent of a 'NEW_Segmented-Aves-Back-NPY' folder (where the Belly and
-    Side folders are). Raises if `path` is not such a folder, so nothing is
-    built in the wrong place."""
     expected = path.parent / VIEW_TEMPLATE.format(view="Back")
     if path != expected:
         raise ValueError(

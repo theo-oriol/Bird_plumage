@@ -1,11 +1,3 @@
-"""Merge every runs/*/eval/predictions.pkl into one Parquet file.
-
-One row per (run, image, condition). The per-habitat arrays are split into float32
-columns: hab_<name> (label share), reg_<name> (regression head), cls_<name>
-(classification head). Runs are converted one at a time to keep memory low.
-
-Output: ../runs/all_predictions.parquet
-"""
 import gc
 import glob
 import json
@@ -18,6 +10,8 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from paths import RUNS_DIR as RUNS
+
+# ── Paths and habitat names ──────────────────────────────────────────────────
 OUT = os.path.join(RUNS, "all_predictions.parquet")
 from paths import LABELS_JSON
 names = json.load(open(LABELS_JSON))
@@ -25,6 +19,7 @@ SHORT = ["Forest", "Savanna", "Shrubland", "Grassland", "Desert", "Marine_Intert
          "Artificial_Terrestrial", "Neritic", "Wetlands", "Rocky_Areas"]
 assert len(SHORT) == len(names) == 10
 
+# ── Convert run by run ───────────────────────────────────────────────────────
 writer = None
 tmp = OUT + ".part"
 for path in sorted(glob.glob(os.path.join(RUNS, "*", "eval", "predictions.pkl"))):
@@ -55,6 +50,8 @@ for path in sorted(glob.glob(os.path.join(RUNS, "*", "eval", "predictions.pkl"))
     print(f"{run}: {n:,} rows", flush=True)
     del table
     gc.collect()
+
+# ── Finish ───────────────────────────────────────────────────────────────────
 writer.close()
 os.replace(tmp, OUT)
 pq_meta = pq.ParquetFile(OUT).metadata

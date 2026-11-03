@@ -1,10 +1,9 @@
-"""Paired comparison of the histogram-only models (all / lightness only / colour only),
-MLP versions, on the 10 group pairs. Same family bootstrap draws as everywhere."""
 import json
 import pickle
 import numpy as np
 from svlib import BASE, SP, GN, PAIRS, bootstrap_counts, make_wauc, metrics, ci
 
+# ── Load ─────────────────────────────────────────────────────────────────────
 stems = np.load(f"{SP}/hist_stems.npy", allow_pickle=True)
 pos = {s: i for i, s in enumerate(stems)}
 H = np.zeros((len(stems), 10), np.float32)
@@ -16,6 +15,8 @@ for k in range(3):
     H[ii] = np.stack(r.habitat.to_numpy())
     fam[ii] = r.family.to_numpy()
     del df, r
+
+# ── Colour vs. lightness ─────────────────────────────────────────────────────
 fams = sorted(set(fam))
 fam2i = {f: i for i, f in enumerate(fams)}
 fidx = np.array([fam2i[f] for f in fam], np.int32)
@@ -30,4 +31,6 @@ for a, b in (("ab", "L"), ("all", "ab"), ("all", "L")):
                                   "mean": float((res[a][0] - res[b][0]).mean()), "mean_ci": ci(D.mean(0)).tolist()}
     print(f"{a} - {b}: mean {out['diffs'][f'{a} - {b}']['mean']:+.3f} {np.round(ci(D.mean(0)), 3)}  "
           f"sig pairs {int(((lo > 0) | (hi < 0)).sum())}/10")
+
+# ── Write ────────────────────────────────────────────────────────────────────
 json.dump(out, open(f"{SP}/hist_compare.json", "w"), indent=1)

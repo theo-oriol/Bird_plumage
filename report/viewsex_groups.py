@@ -1,17 +1,14 @@
-"""View x sex on clean images, 5 group AUCs of 5.1, both models.
-
-Species with both sexes (as in 6.2), each sex x view subset. Contrasts (paired,
-same family bootstrap draws): F - M within each view, Belly - Back and Side - Back
-within each sex, and the interaction (F - M on belly) - (F - M on back).
-"""
 import gc
 import json
 import numpy as np
 from svlib import SP, B, GN, load, bootstrap_counts, make_wauc, group_ovr, ci
 
+# ── Settings ─────────────────────────────────────────────────────────────────
 VIEWS, SEXES = ("Back", "Belly", "Side"), ("M", "F")
 out = {"groups": GN, "B": B}
 wauc = None
+
+# ── Per model ────────────────────────────────────────────────────────────────
 for model in ("sham", "main"):
     d = load(model)
     if wauc is None:
@@ -51,4 +48,6 @@ for model in ("sham", "main"):
     for k, v in diffs.items():
         per = "  ".join(f"{g[:8]} {x:+.3f}{'*' if (l > 0 or h < 0) else ' '}" for g, x, l, h in zip(GN, v["delta"], v["lo"], v["hi"]))
         print(f"{k:22s} mean {v['mean']:+.3f} [{v['mean_ci'][0]:+.3f}, {v['mean_ci'][1]:+.3f}]   {per}")
+
+# ── Write ────────────────────────────────────────────────────────────────────
 json.dump(out, open(f"{SP}/viewsex_groups.json", "w"), indent=1)

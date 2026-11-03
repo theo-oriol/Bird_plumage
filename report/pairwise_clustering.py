@@ -1,9 +1,3 @@
-"""4.4: hierarchical clustering of the clean pairwise matrix of 4.2.
-
-Distance between two habitats = pairwise AUC - 0.5 (how well the model separates them),
-average linkage, over the habitats tested in 4.2. The tree is cut at 4 to 7 clusters.
-Reads results/pairwise_check.json, writes results/pairwise_clustering.json.
-"""
 import json
 import os
 
@@ -11,11 +5,13 @@ import numpy as np
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial.distance import squareform
 
+# ── Load ─────────────────────────────────────────────────────────────────────
 SP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 PW = json.load(open(f"{SP}/pairwise_check.json"))
 from paths import LABELS_JSON
 names = json.load(open(LABELS_JSON))
 
+# ── Cluster per model ────────────────────────────────────────────────────────
 out = {}
 for model in ("main", "sham"):
     A = np.array(PW[model]["auc"], dtype=float)
@@ -34,5 +30,6 @@ for model in ("main", "sham"):
         print(f"{model} k={k}: " + " | ".join(", ".join(g) for g in cuts[str(k)]))
     out[model] = {"habitats": [names[i] for i in ok], "linkage": Z.tolist(), "clusters": cuts}
 
+# ── Write ────────────────────────────────────────────────────────────────────
 json.dump(out, open(f"{SP}/pairwise_clustering.json", "w"), indent=1)
 print("wrote pairwise_clustering.json")

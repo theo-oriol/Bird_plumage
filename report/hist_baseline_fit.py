@@ -1,8 +1,8 @@
-"""fit_predict of hist_baseline.py (soft-label MLP), importable without running the script."""
 import numpy as np
 import torch
 
 
+# ── Histogram MLP ────────────────────────────────────────────────────────────
 def fit_predict(kind, Xtr, Ytr, Xva, Yva, Xte, seed=0):
     torch.manual_seed(seed)
     d = Xtr.shape[1]

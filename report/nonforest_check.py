@@ -1,14 +1,3 @@
-"""How much of each habitat's AUC is just 'not a forest bird'?
-
-Clean (reference) images, regression outputs. For each habitat t != Forest:
-  full        AUC of "t present" ranked by output t, all images (= report value)
-  notforest   same labels, ranked by -Forest output (the 'least forest-like' baseline)
-  nf_own      AUC of "t present" ranked by output t, among images with Forest share == 0
-              (+ family bootstrap 95% CI)
-  nf_best     best other output in that same subset, and own - best other (+ CI)
-  nf05_own    same as nf_own but subset = Forest share < 0.5 (forest not the main habitat)
-One model in memory at a time.
-"""
 import os
 import gc
 import json
@@ -18,6 +7,8 @@ import numpy as np
 from sklearn.metrics import roc_auc_score
 
 from paths import RUNS_DIR, LABELS_JSON
+
+# ── Settings ─────────────────────────────────────────────────────────────────
 BASE = RUNS_DIR
 SP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 os.makedirs(SP, exist_ok=True)
@@ -25,6 +16,7 @@ names = json.load(open(LABELS_JSON))
 NH, FOREST, B, SEED = 10, 0, 500, 12345
 
 
+# ── Helpers ──────────────────────────────────────────────────────────────────
 def load(model):
     S, H, F = [], [], []
     for k in range(3):
@@ -50,6 +42,7 @@ def wauc(y, s, w):
     return roc_auc_score(y, s, sample_weight=w)
 
 
+# ── Per model ────────────────────────────────────────────────────────────────
 out = {"habitat_names": names, "B": B}
 for model in ("main", "sham"):
     t0 = time.time()
@@ -89,5 +82,6 @@ for model in ("main", "sham"):
     del S, H, F, Wnf
     gc.collect()
 
+# ── Write ────────────────────────────────────────────────────────────────────
 json.dump(out, open(f"{SP}/nonforest_check.json", "w"))
 print("wrote nonforest_check.json")

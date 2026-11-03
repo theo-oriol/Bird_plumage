@@ -1,17 +1,15 @@
-"""Loss table of the report: per model and fold, the evaluated checkpoint's train/validation losses.
-
-Recovered from the one-off command that produced losses.json. Reads runs/{model}_fold{k}/metrics.csv
-and manifest.json; the evaluated checkpoint is the epoch with the lowest smoothed early-stop criterion.
-"""
 import json
 import os
 import pandas as pd
 
 from paths import RUNS_DIR
+
+# ── Paths ────────────────────────────────────────────────────────────────────
 RUNS = RUNS_DIR
 SP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 os.makedirs(SP, exist_ok=True)
 
+# ── Collect losses ───────────────────────────────────────────────────────────
 out = {}
 for m in ["main", "sham"]:
     rows = []
@@ -26,4 +24,6 @@ for m in ["main", "sham"]:
     print(m)
     print(pd.DataFrame(rows).round(4).to_string())
     out[m] = rows
+
+# ── Write ────────────────────────────────────────────────────────────────────
 json.dump(out, open(f"{SP}/losses.json", "w"))

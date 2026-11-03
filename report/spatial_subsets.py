@@ -1,25 +1,18 @@
-"""Cost of removing the spatial structure, measured without the shuffled-image bias.
-
-Pixel shuffling (A3 h1) keeps exactly the colour/lightness histogram of the crops.
-Instead of asking the network to read shuffled images, the histogram model of 5.3
-(MLP on the histogram of the same 16 crops, same family folds) reads that same
-information. Cost of the spatial structure in a subset = group AUC of the
-histogram model - group AUC of the main network on clean images (5 group AUCs of
-5.1, averaged). Subsets as in section 6. Family bootstrap B=500, same draws, so
-contrasts between subsets are paired. Saves point values and bootstrap draws.
-"""
 import json
 import numpy as np
 import pandas as pd
 from svlib import SP, B, GN, load, bootstrap_counts, make_wauc, group_ovr
 
 from paths import DIMORPHISM_CSV
+
+# ── Settings ─────────────────────────────────────────────────────────────────
 DIM = DIMORPHISM_CSV
 TERTS, VIEWS, SEXES = ("low", "mid", "high"), ("Back", "Belly", "Side"), ("M", "F")
 SUBSETS = (list(VIEWS) + list(SEXES) + [f"{s}_{v}" for s in SEXES for v in VIEWS] + list(TERTS)
            + [f"{t}_{s}" for t in TERTS for s in SEXES] + [f"{t}_{s}_{v}" for t in TERTS for s in SEXES for v in VIEWS])
 SOURCES = {"all": "", "L": "_L", "ab": "_ab"}  # full histogram, lightness only, colour only
 
+# ── Load ─────────────────────────────────────────────────────────────────────
 d = load("main")
 stems = np.load(f"{SP}/hist_stems.npy", allow_pickle=True)
 pos = {s: i for i, s in enumerate(stems)}
@@ -33,6 +26,7 @@ F = d.family.map(fam2i).to_numpy(np.int32)
 H = np.stack(d.habitat.to_numpy()).astype(np.float32)
 S = np.stack(d.reg_prob.to_numpy()).astype(np.float64)
 
+# ── Dimorphism tertiles ──────────────────────────────────────────────────────
 dim = pd.concat([pd.read_csv(DIM.format(v)).set_index("species").dimorphism.rename(v) for v in ("back", "belly")], axis=1)
 dim["index"] = dim.mean(1, skipna=False)
 dim = dim.dropna()
@@ -46,6 +40,7 @@ isboth = d.species.isin(both).to_numpy()
 tr = d.species.map(tert).fillna("").to_numpy()
 
 
+# ── Subsets ──────────────────────────────────────────────────────────────────
 def mask(s):
     if s in VIEWS:
         return view == s
@@ -62,6 +57,7 @@ def mask(s):
     return m
 
 
+# ── Per subset ───────────────────────────────────────────────────────────────
 rows, boots = {}, {}
 for s in SUBSETS:
     m = mask(s)
@@ -74,5 +70,7 @@ for s in SUBSETS:
         rows[s][f"cost_{k}"] = float(np.mean((Ph - Pn)[ok]))   # hist - net: what is lost without the spatial structure
         boots[f"{s}|{k}"] = np.nanmean((Bh - Bn)[ok], 0)
     print(f"{s:16s} n={rows[s]['n']:6d}  net {rows[s]['net']:.3f}  hist {rows[s]['hist_all']:.3f}  cost {rows[s]['cost_all']:+.3f}", flush=True)
+
+# ── Write ────────────────────────────────────────────────────────────────────
 np.savez_compressed(f"{SP}/spatial_subsets.npz", **boots)
 json.dump({"rows": rows, "subsets": SUBSETS, "B": B, "groups": GN}, open(f"{SP}/spatial_subsets.json", "w"), indent=1)

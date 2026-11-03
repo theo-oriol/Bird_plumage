@@ -1,12 +1,3 @@
-"""Histogram features from the exact 16 crops the network saw at evaluation.
-
-Same call as EvalDataset.__getitem__ for the clean "reference" condition:
-chain.build_bag with positions_rng = derive_rng("eval-geometry", stem), so the
-flip, crop positions, 128->224 resize and median blur are identical. A3_h1 only
-permutes pixels inside each crop, so the pixel set used here (all pixels of the
-16 crops, background included, every 2nd pixel per direction) is exactly what
-survives pixel shuffling. Same features as hist_features.py.
-"""
 import os
 import sys
 import glob
@@ -14,6 +5,8 @@ import numpy as np
 from multiprocessing import Pool
 
 from paths import PROJECT_ROOT, DATASET_DIR
+
+# ── Paths ────────────────────────────────────────────────────────────────────
 ROOT = PROJECT_ROOT
 sys.path.insert(0, ROOT)
 from src import chain  # noqa: E402
@@ -28,6 +21,7 @@ OUT = f"{SP}/hist_crop_chunks"
 CHUNK = 2000
 
 
+# ── Helpers ──────────────────────────────────────────────────────────────────
 def dirs(view):
     leaf = f"NEW_Segmented-Aves-{view}-NPY"
     return [f"{DS}/Familly_split_{s}/{leaf}" for s in ("no_ablation", "A1", "A2", "A7")]
@@ -48,6 +42,7 @@ def feats(stem):
     return np.concatenate(out).astype(np.float32)
 
 
+# ── Main ─────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     stems = np.load(f"{SP}/hist_stems.npy", allow_pickle=True).tolist()

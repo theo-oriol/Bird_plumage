@@ -1,44 +1,3 @@
-"""A2 - gris + niveau et contraste standardises.
-
-Standalone: no dependency on the rest of the project (only numpy +
-zstandard). The CIELAB conversion is hand-rolled (sRGB <-> XYZ <-> Lab,
-D65) instead of going through scikit-image, because — unlike A1/A6/A7 —
-this file's ablation itself needs two passes over the *whole dataset*
-before a single image can be processed, so it made sense to reuse the
-already-verified standalone implementation from
-scripts/build_grayscale_norm_lum_dataset.py rather than pull in skimage
-for one extra dependency.
-
-DEVIATION FROM THE PROTOCOL PDF, DELIBERATE: §3's A2 card specifies a
-*fixed* target (L' = (L-m)*(15/s)+50, cible (50, 15)) - each specimen is
-rescaled to its own fixed target, no dataset-wide computation involved.
-This file no longer does that. Instead the target (mean M, spread S, and
-the *full distribution*, not just its first two moments) is computed once
-from the whole dataset and every specimen is matched to it - SHINE's
-lumMatch + histMatch on L* (Willenbockel, Sadr, Fiset, Horne, Gosselin &
-Tanaka, Behavior Research Methods 42:671-684, 2010), the same method
-scripts/build_grayscale_norm_lum_dataset.py already uses for its own
-(separate) grayscale variant. Decided explicitly over keeping A2 as
-specified - see README "Ce qui n'a pas pu suivre le protocole a la
-lettre". Three functions, matching three passes over the population:
-
-  compute_stats()                - pass 1: this specimen's own (N, mean, std)
-  compute_target_contribution()  - pass 2: its lum-matched histogram, to
-                                     be accumulated (image-weighted) into
-                                     one target density
-  build()                         - pass 3: lumMatch + exact histMatch this
-                                     specimen to the now-fixed (M, S, target)
-                                     - the only one of the three that
-                                     produces an output image
-
-scripts/build_a2_cache.py orchestrates all three across every specimen and
-caches (M, S, target_pdf) so they don't need recomputing on every rebuild.
-Two jobs at the file-io level, same as A1/A7:
-  write_cache_entry()/read_canvas() - the offline cache, read online by
-                                        chain.py in place of the ordinary
-                                        source read (pipeline step 0).
-"""
-
 from __future__ import annotations
 
 import io
@@ -48,6 +7,7 @@ from typing import Dict, Optional, Tuple
 import numpy as np
 import zstandard as zstd
 
+# ── Settings ─────────────────────────────────────────────────────────────────
 CODE = "A2"
 N_BINS = 256
 VMAX = 100.0  # L* range
@@ -55,9 +15,7 @@ WEIGHT = "image"  # one specimen = one vote, not one pixel = one vote (a large b
 CLIP_TARGET = True
 
 
-# ---------------------------------------------------------------------------
-# cache I/O
-# ---------------------------------------------------------------------------
+# ── Cache I/O ────────────────────────────────────────────────────────────────
 
 _DECOMPRESSOR = zstd.ZstdDecompressor()
 
@@ -94,9 +52,7 @@ def read_canvas(dataset_a2_dir: Path, stem: str) -> np.ndarray:
     return _read_array_zst(path)
 
 
-# ---------------------------------------------------------------------------
-# sRGB <-> CIELAB (D65) - same maths as build_grayscale_norm_lum_dataset.py
-# ---------------------------------------------------------------------------
+# ── sRGB <-> CIELAB (D65) ────────────────────────────────────────────────────
 
 _M_RGB2XYZ = np.array([[0.4124564, 0.3575761, 0.1804375],
                         [0.2126729, 0.7151522, 0.0721750],
@@ -122,15 +78,15 @@ def _f_inv(t: np.ndarray) -> np.ndarray:
     return np.where(t > _DELTA, t ** 3, 3 * _DELTA ** 2 * (t - 4.0 / 29.0))
 
 
+# sRGB in [0, 1] -> CIELAB (D65)
 def rgb_to_lab(rgb01: np.ndarray) -> np.ndarray:
-    """sRGB in [0, 1], shape (..., 3) -> CIELAB (L* in [0, 100])."""
     xyz = _srgb_to_linear(np.asarray(rgb01, dtype=np.float64)) @ _M_RGB2XYZ.T
     fx, fy, fz = [_f(xyz[..., i] / _WHITE[i]) for i in range(3)]
     return np.stack([116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)], axis=-1)
 
 
+# CIELAB (D65) -> sRGB in [0, 1], clipped
 def lab_to_rgb(lab: np.ndarray) -> np.ndarray:
-    """CIELAB -> sRGB in [0, 1], clipped."""
     lab = np.asarray(lab, dtype=np.float64)
     fy = (lab[..., 0] + 16) / 116
     fx = fy + lab[..., 1] / 500
@@ -139,12 +95,10 @@ def lab_to_rgb(lab: np.ndarray) -> np.ndarray:
     return np.clip(_linear_to_srgb(xyz @ _M_XYZ2RGB.T), 0.0, 1.0)
 
 
-# ---------------------------------------------------------------------------
-# SHINE lumMatch / exact histMatch (Willenbockel et al. 2010, Table 1)
-# ---------------------------------------------------------------------------
+# ── SHINE lumMatch / exact histMatch (Willenbockel et al. 2010, Table 1) ─────
 
+# Rescale to mean M and std S (a flat image is set to M), optionally clipped to [0, vmax]
 def lum_match(values: np.ndarray, M: float, S: float, vmax: float = VMAX, clip: bool = True) -> np.ndarray:
-    """z-score then rescale onto (M, S), optionally clipped to [0, vmax]."""
     m, s = values.mean(), values.std()
     if s < 1e-8:
         return np.full_like(values, M)
@@ -157,11 +111,8 @@ def _quantise(values: np.ndarray, n_bins: int, vmax: float) -> np.ndarray:
     return np.clip(np.rint(values / step), 0, n_bins - 1).astype(np.int64)
 
 
+# Integer counts proportional to pdf summing to exactly n (largest remainder), for this image's n
 def _counts_from_pdf(pdf: np.ndarray, n: int) -> np.ndarray:
-    """Integer counts summing to exactly n, proportional to pdf (largest-
-    remainder method): the target adapts to *this* image's own pixel count
-    instead of assuming every image has the same N - the bug this whole
-    approach exists to avoid."""
     exact = np.asarray(pdf, dtype=np.float64) * n
     counts = np.floor(exact).astype(np.int64)
     short = n - int(counts.sum())
@@ -176,9 +127,8 @@ def _counts_from_pdf(pdf: np.ndarray, n: int) -> np.ndarray:
     return counts
 
 
+# Exact histogram match: sort the pixels (random tie-break), give them the target levels in order
 def hist_match_exact(values: np.ndarray, pdf: np.ndarray, vmax: float = VMAX, rng=None) -> np.ndarray:
-    """Exact histogram matching: pixels sorted ascending (ties broken at
-    random), assigned the target's levels in order."""
     n = values.size
     counts = _counts_from_pdf(pdf, n)
     rng = np.random.default_rng() if rng is None else rng
@@ -194,24 +144,19 @@ def hist_match_exact(values: np.ndarray, pdf: np.ndarray, vmax: float = VMAX, rn
     return out
 
 
-# ---------------------------------------------------------------------------
-# the three dataset-wide passes
-# ---------------------------------------------------------------------------
+# ── The three dataset-wide passes ────────────────────────────────────────────
 
+# Pass 1: this specimen's L* (N, mean, std), later reduced to the population M, S
 def compute_stats(rgb_uint8: np.ndarray, mask: np.ndarray) -> Dict[str, float]:
-    """Pass 1: this specimen's own L* (N, mean, std) - reduced across the
-    whole dataset (image-weighted by default) into the population M, S."""
     lab = rgb_to_lab(rgb_uint8.astype(np.float64)[mask] / 255.0)
     values = lab[..., 0]
     return {"n_pixels": int(values.size), "mean": float(values.mean()), "std": float(values.std())}
 
 
+# Pass 2: lum-match to (M, S), then histogram; the weighted sum over specimens is the target
 def compute_target_contribution(
     rgb_uint8: np.ndarray, mask: np.ndarray, M: float, S: float, n_bins: int = N_BINS, clip_target: bool = CLIP_TARGET
 ) -> Dict[str, object]:
-    """Pass 2: lum-match this specimen to (M, S), then histogram it - the
-    weighted sum of every specimen's histogram (see build_a2_cache.py) is
-    the target distribution pass 3 matches every specimen to."""
     lab = rgb_to_lab(rgb_uint8.astype(np.float64)[mask] / 255.0)
     values = lab[..., 0]
 
@@ -234,6 +179,7 @@ def compute_target_contribution(
     }
 
 
+# Pass 3: lumMatch then exact histMatch of L* to the population target; a*, b* untouched
 def build(
     rgb_uint8: np.ndarray,
     mask: np.ndarray,
@@ -242,8 +188,6 @@ def build(
     target_pdf: np.ndarray,
     rng: Optional[np.random.Generator] = None,
 ) -> Tuple[np.ndarray, Dict[str, float]]:
-    """Pass 3: lumMatch then exact histMatch this specimen's L* to the
-    (already computed) population target. (a*, b*) untouched."""
     rgb01 = rgb_uint8.astype(np.float64) / 255.0
     lab = rgb_to_lab(rgb01)
 
@@ -269,11 +213,9 @@ def build(
     return out_uint8, meta
 
 
+# ── Run as a script ──────────────────────────────────────────────────────────
+# Synthetic specimen for the example below: colour patches on a black background
 def _demo_canvas(size: int = 256, seed: int = 0) -> Tuple[np.ndarray, np.ndarray]:
-    """A synthetic specimen for the __main__ example below: a few solid
-    colour patches on a black background (background = pure zeros, the
-    same "fond noir" convention as the real dataset; the mask is just "any
-    channel nonzero")."""
     rng = np.random.default_rng(seed)
     canvas = np.zeros((size, size, 3), dtype=np.uint8)
     canvas[40 : size - 40, 40 : size - 40] = rng.integers(
@@ -287,8 +229,7 @@ def _demo_canvas(size: int = 256, seed: int = 0) -> Tuple[np.ndarray, np.ndarray
 
 
 if __name__ == "__main__":
-    # A2 needs a *population*, not one image - five synthetic specimens
-    # stand in for the dataset here.
+    # A2 needs a population: five synthetic specimens stand in for the dataset
     specimens = [_demo_canvas(seed=i) for i in range(5)]
 
     stats = [compute_stats(c, m) for c, m in specimens]

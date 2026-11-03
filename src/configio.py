@@ -1,11 +1,3 @@
-"""Plain YAML configs, no framework. A run config lists other YAML files to
-merge in under `includes` (paths.yaml, model.yaml, optim.yaml) plus its own
-run-specific keys (fold, sham, seed...). load_config() flattens all of that
-into one dict and nothing more — dot-access, defaults, config composition
-beyond a flat merge are deliberately not features here, so a reader can see
-the whole resolved config by looking at one dict.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -16,6 +8,7 @@ import yaml
 from src.env import expand_config
 
 
+# ── Config loading ───────────────────────────────────────────────────────────
 def load_config(config_path: str | Path) -> Dict[str, Any]:
     config_path = Path(config_path)
     with open(config_path) as f:

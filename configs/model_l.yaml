@@ -1,8 +1,4 @@
-# Model hyperparameters, protocole §1 - DINOv3-L variant. Identical to
-# model.yaml (the protocol's own choice, still the default every
-# configs/train_*.yaml includes) - this file exists as the explicit "L" of
-# the S/L/H set alongside model_s.yaml/model_h.yaml, for configs that want
-# to name their backbone size rather than rely on model.yaml's default.
+# DINOv3-L variant; LoRA and head settings as in model.yaml
 backbone:
   name: dinov3_vitl16
   lora:

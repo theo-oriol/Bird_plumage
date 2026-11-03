@@ -1,19 +1,3 @@
-"""Pilot: at which spatial scale is the habitat signal? Wavelet scattering on the evaluation crops.
-
-The histogram model of 5.3 sees no arrangement at all. Here the same model also
-gets wavelet scattering coefficients (Kymatio, order 1 + 2, 8 orientations) of
-the same 16 crops, averaged over each crop and over the 16 crops, so it sees
-texture up to a chosen scale but no arrangement beyond it. Crops are taken
-every second pixel (112 px), like the histograms; wavelet scale 2^j at 112 px =
-2^(j+1) px at the network's 224 px. Cumulative feature sets:
-  hist        : histogram only (no arrangement)          ~ A3 h1
-  hist + j<1  : + structure up to ~4 px  (224 scale)      ~ A3 h4
-  hist + j<3  : + structure up to ~16 px                  ~ A3 h16
-  hist + j<5  : + structure up to ~64 px                  ~ A3 h56
-Channels L*, a*, b*. Pilot on 10% of the species (all views), network's own
-3 family folds, same MLP and training as hist_baseline.py. Reported: 5 group
-AUCs (5.1) and 10 group-pair AUCs, vs. the main network on the same images.
-"""
 import os
 os.environ.setdefault("KMP_AFFINITY", "disabled")
 import sys
@@ -26,6 +10,7 @@ import numpy as np
 import torch
 from multiprocessing import get_context
 
+# ── Settings ─────────────────────────────────────────────────────────────────
 SP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 os.makedirs(SP, exist_ok=True)
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "pylib"))  # kymatio: pip install --target report/pylib kymatio==0.3.0
@@ -41,6 +26,7 @@ TAG = os.environ.get("TAG", "pilot")
 torch.set_num_threads(4)
 
 
+# ── Crops ────────────────────────────────────────────────────────────────────
 def lab_crops(stem):
     crops, _ = hfc.chain.build_bag(*hfc.dirs(hfc.view_of(stem)), stem, hfc.Condition(),
                                    hfc.derive_rng("eval-condition", stem, "reference"),
@@ -50,8 +36,8 @@ def lab_crops(stem):
     return lab.transpose(0, 3, 1, 2).astype(np.float32)  # 16 x 3 x 112 x 112
 
 
+# The 16 evaluation crops in L*a*b* (for scattering) and their histogram features
 def crops_and_hist(stem):
-    """the 16 evaluation crops in L*a*b* (for scattering) and their histogram features (as hist_features_crops.feats)."""
     lab = lab_crops(stem)
     v = lab.transpose(0, 2, 3, 1).reshape(-1, 3)
     L, a, b = v[:, 0], v[:, 1], v[:, 2]
@@ -64,6 +50,7 @@ def crops_and_hist(stem):
     return lab, np.concatenate(out).astype(np.float32)
 
 
+# ── Scattering coefficient order ─────────────────────────────────────────────
 # coefficient -> largest wavelet scale it uses (order 0: -1), following Kymatio 0.3's output order
 maxj = [-1] + [n // L for n in range(J * L)]
 for j1 in range(J):
@@ -74,6 +61,7 @@ for j1 in range(J):
 maxj = np.array(maxj)
 order = np.r_[0, np.ones(J * L, int), 2 * np.ones(len(maxj) - 1 - J * L, int)]
 
+# ── Main ─────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     t0 = time.time()
     if not os.path.exists(f"{SP}/hist_stems.npy"):  # same image list as hist_features.py
@@ -154,7 +142,7 @@ if __name__ == "__main__":
             os.remove(part_f)
     print(f"features done ({time.time() - t0:.0f}s)", flush=True)
 
-    # ---- feature sets ----
+    # ── Feature sets ─────────────────────────────────────────────────────────
     is_bin = np.r_[np.ones(512, bool), np.tile(np.r_[np.ones(32, bool), np.zeros(7, bool)], 4)]
     Xh = Xh.copy()
     Xh[:, is_bin] = np.log(Xh[:, is_bin] + 1e-4)
@@ -189,7 +177,7 @@ if __name__ == "__main__":
     np.savez_compressed(f"{SP}/scat_{TAG}_preds.npz", sel=sel, **{k.replace(" ", "_").replace("<=", "le").replace("+", "p"): v for k, v in preds.items()})
     preds["network (clean)"] = S_net[sel]
 
-    # ---- AUCs with family bootstrap ----
+    # ── AUCs with family bootstrap ───────────────────────────────────────────
     fams = sorted(set(fs))
     fam2i = {f: i for i, f in enumerate(fams)}
     fidx = np.array([fam2i[f] for f in fs], np.int32)

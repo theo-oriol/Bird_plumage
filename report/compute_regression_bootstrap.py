@@ -1,14 +1,3 @@
-"""Family-level bootstrap for the regression-head (reg_prob) per-habitat AUC
-benchmark: per-cell 95% CIs, paired delta vs reference (same images, same
-draws), and paired main - sham difference. Families are the resampling unit
-(same convention as src/evaluation/metrics.bootstrap_delta_auc - the folds
-hold out whole families, so images within a family are not independent).
-
-Weighted Mann-Whitney AUC: scores are sorted once per cell, and each
-bootstrap draw is just a per-image weight vector (= how many times that
-image's family was drawn), so a draw costs a few vectorised cumsums instead
-of a re-sort. One model resident in memory at a time.
-"""
 import os
 import gc
 import json
@@ -19,6 +8,8 @@ import pandas as pd
 from sklearn.metrics import roc_auc_score
 
 from paths import RUNS_DIR, LABELS_JSON
+
+# ── Settings ─────────────────────────────────────────────────────────────────
 BASE = RUNS_DIR
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 os.makedirs(OUT, exist_ok=True)
@@ -41,6 +32,7 @@ SINGLE = ["reference", "A1", "A2", "A5", "A7",
 ROWS = SINGLE + list(SEED_GROUPS)
 
 
+# ── Helpers ──────────────────────────────────────────────────────────────────
 def load(model):
     dfs = []
     for k in range(3):
@@ -91,8 +83,8 @@ def make_wauc(counts):
     return wauc
 
 
+# Per condition: point AUCs [NH] and bootstrap [NH, B]; A6 also gets the reference on the same images
 def per_cond(data, fam2i, wauc):
-    """returns cond -> (P[NH], BT[NH,B]); plus A6 -> reference restricted to the same images"""
     ref = data["reference"]
     ref_idx = {s: i for i, s in enumerate(ref["stem"])}
     res, ref_sub = {}, {}
@@ -118,8 +110,8 @@ def ci(x):
     return lo, hi
 
 
+# Table rows: AUC and delta vs. reference (paired, same images), point and 95% CI
 def summarize(res, ref_sub, n_per_cond):
-    """23 rows: point/CI for AUC and for delta vs reference (paired, same images)."""
     out = {}
     P_ref, BT_ref = res["reference"]
     for row in ROWS:
@@ -151,7 +143,7 @@ def summarize(res, ref_sub, n_per_cond):
 
 t_start = time.time()
 
-# ---- main ----
+# ── Main model ───────────────────────────────────────────────────────────────
 print("=== main: loading ===", flush=True)
 data = load("main")
 fams = sorted(set(data["reference"]["fam"]))
@@ -182,7 +174,7 @@ del res, ref_sub
 gc.collect()
 print(f"=== main done ({time.time() - t_start:.0f}s) ===", flush=True)
 
-# ---- sham ----
+# ── Sham model ───────────────────────────────────────────────────────────────
 print("=== sham: loading ===", flush=True)
 data = load("sham")
 assert set(data["reference"]["fam"]) <= set(fams)
@@ -195,7 +187,7 @@ del res, ref_sub
 gc.collect()
 print(f"=== sham done ({time.time() - t_start:.0f}s) ===", flush=True)
 
-# ---- paired main - sham ----
+# ── Paired main - sham ───────────────────────────────────────────────────────
 diff = {}
 for row in ROWS:
     m, s = main_rows[row], sham_rows[row]

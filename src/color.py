@@ -1,25 +1,3 @@
-"""Colour-space ablations and their scientific scope.
-
-All colour operations are performed in CIE L*a*b* (D65), after conversion from
-sRGB.  This makes luminance/chroma manipulations explicit and avoids treating
-the numerical R, G and B display primaries as independent biological colours.
-
-The nomenclature follows the 12 broad avian colour classes of Delhey et al.
-(2023), *PNAS*, doi:10.1073/pnas.2217692120. Pixel assignment starts from the
-published CN11 colour-name probabilities (van de Weijer et al. 2009). A small,
-documented calibration layer moves only the boundaries that systematic QC
-on colour-calibrated bird images showed to be problematic. The ordinary
-``delhey_no_*`` variants use hard calibrated labels; ``delhey_soft_no_*`` use
-the calibrated category memberships as graded masks. Only the eight chromatic
-classes are ablated. Colour removal itself is a new experimental intervention:
-a change in CNN error means that the removed class carried non-redundant
-predictive information, not that the colour is a causal adaptation or a proven
-mediator of sexual selection.
-
-See ``README_plumage_ablations.md`` for the planned paired estimands and the
-distinction between moderation and causal mediation.
-"""
-
 from __future__ import annotations
 
 from functools import lru_cache
@@ -32,6 +10,8 @@ from scipy.io import loadmat
 from skimage import color
 
 
+# ── Colour categories ────────────────────────────────────────────────────────
+# 12 broad avian colour classes: Delhey et al. 2023, PNAS, doi:10.1073/pnas.2217692120
 DELHEY_CATEGORIES: Tuple[str, ...] = (
     "blue",
     "purple",
@@ -59,6 +39,7 @@ DELHEY_CHROMATIC_CATEGORIES: Tuple[str, ...] = (
 )
 DELHEY_CHROMATIC = frozenset(DELHEY_CHROMATIC_CATEGORIES)
 
+# CN11 colour names: van de Weijer et al. 2009
 CN11_CATEGORIES: Tuple[str, ...] = (
     "black",
     "blue",
@@ -72,16 +53,14 @@ CN11_CATEGORIES: Tuple[str, ...] = (
     "white",
     "yellow",
 )
+
+# ── CN11 resource and calibration ────────────────────────────────────────────
 CN11_RESOURCE_PATH = Path(__file__).resolve().parent / "resources" / "w2c.mat"
 CN11_SOURCE_URL = (
     "https://lear.inrialpes.fr/people/vandeweijer/code/ColorNaming.tar"
 )
 
-# CN11 remains the baseline. These CIELCh conditions are local calibration
-# gates, not a replacement partition of colour space. CIE hue angles are not
-# HSV/HSL angles: representative sRGB red, rufous, yellow, green, blue and
-# purple occur near 40, 54, 91, 136, 306 and 328 degrees. Every constant is
-# written to the run manifest.
+# Local CIELCh calibration gates on top of CN11 (CIE hue angles, not HSV)
 DELHEY_CN11_CALIBRATION = {
     "brown_light_split_L": 42.0,
     "gray_light_split_L": 42.0,
@@ -117,17 +96,12 @@ DELHEY_CN11_CALIBRATION = {
     "rufous_yellow_edge_chroma_min": 22.0,
     "rufous_yellow_edge_chroma_max": 30.0,
     "rufous_yellow_edge_lightness_max": 45.0,
-    # Warm off-white plumage is often called brown by CN11. The allowed chroma
-    # increases gently with lightness, reflecting a weak cream cast, but is
-    # capped so genuinely tan feathers remain light brown.
+    # Cream white: CN11 often calls warm off-white brown; the chroma limit rises gently with L*
     "cream_white_lightness_min": 58.0,
     "cream_white_chroma_at_L50": 14.0,
     "cream_white_chroma_per_L": 0.35,
     "cream_white_chroma_max": 24.0,
-    # Olive plumage is sometimes named brown/orange/yellow by CN11. Rescue it
-    # only where CN11 itself assigns appreciable green probability relative to
-    # every competing warm name. A slightly looser ratio is permitted in dark
-    # plumage, where all colour-name probabilities are flatter.
+    # Olive rescue: only where CN11 gives appreciable green vs. every warm name
     "green_rescue_hue_min": 65.0,
     "green_rescue_dark_hue_min": 72.0,
     "green_rescue_dark_hue_max": 85.0,
@@ -136,31 +110,25 @@ DELHEY_CN11_CALIBRATION = {
     "green_rescue_chroma_min": 10.0,
     "green_rescue_probability_min": 0.08,
     "green_rescue_warm_ratio_min": 0.25,
-    # The low-hue olive tail overlaps strongly with warm yellow-brown plumage.
-    # These bounds are therefore a compromise: they recover dark olive backs
-    # in Piculus and Saltator without restoring the broad v4 green expansion.
+    # Compromise bounds: recover dark olive backs (Piculus, Saltator) without a broad green expansion
     "green_rescue_dark_ratio_min": 0.25,
     "green_rescue_dark_lightness_max": 34.0,
     "green_rescue_dark_chroma_max": 26.0,
     "green_rescue_vivid_yellow_guard_hue_max": 80.0,
     "green_rescue_vivid_yellow_guard_chroma_min": 35.0,
-    # Dark blue CN11 pixels can be won by black or grey because luminance is
-    # low. Hue, chroma and a non-negligible CN11 blue probability are all
-    # required, so neutral black is not relabelled.
+    # Dark blue: needs hue, chroma and some CN11 blue, so neutral black stays black
     "dark_blue_hue_min": 230.0,
     "dark_blue_hue_max": 330.0,
     "dark_blue_chroma_min": 5.0,
     "dark_blue_probability_min": 0.06,
-    # Further local corrections for pale yellow-white, dark maroon-purple and
-    # the lowest-lightness brown/grey tail.
+    # Pale yellow-white, dark maroon-purple and darkest brown/grey corrections
     "pale_yellow_white_lightness_min": 85.0,
     "pale_yellow_white_chroma_max": 25.0,
     "dark_red_purple_lightness_max": 22.0,
     "dark_red_purple_chroma_max": 20.0,
     "dark_red_purple_cn11_ratio_min": 0.60,
     "dark_mark_black_lightness_max": 22.0,
-    # Soft calibration only: logistic transition widths and maximum fractions
-    # of donor membership transferred to the neighbouring category.
+    # Soft calibration only: transition widths and maximum membership transferred
     "soft_lightness_width": 4.0,
     "soft_hue_width": 4.0,
     "soft_chroma_width": 4.0,
@@ -180,10 +148,10 @@ DELHEY_CN11_CALIBRATION = {
 }
 
 
+# ── CN11 table ───────────────────────────────────────────────────────────────
+# CN11 32^3 sRGB lookup table (van de Weijer et al. 2009)
 @lru_cache(maxsize=1)
 def _load_cn11_table() -> np.ndarray:
-    """Load the published 32^3 sRGB-to-CN11 probability lookup table."""
-
     if not CN11_RESOURCE_PATH.is_file():
         raise FileNotFoundError(
             f"Missing CN11 lookup table: {CN11_RESOURCE_PATH}"
@@ -197,6 +165,7 @@ def _load_cn11_table() -> np.ndarray:
     return table
 
 
+# ── Input checks and CIELAB conversion ───────────────────────────────────────
 def _check_rgb(rgb: np.ndarray) -> np.ndarray:
     arr = np.asarray(rgb, dtype=np.float64)
     if arr.ndim != 3 or arr.shape[-1] != 3:
@@ -219,15 +188,13 @@ def _check_foreground(mask: Optional[np.ndarray], shape: Tuple[int, int]) -> np.
     return mask
 
 
+# sRGB in [0, 1] -> CIELAB (D65)
 def rgb_to_lab(rgb: np.ndarray) -> np.ndarray:
-    """Convert an sRGB image in [0, 1] to CIE Lab under D65."""
-
     return color.rgb2lab(_check_rgb(rgb), illuminant="D65")
 
 
+# CIELAB (D65) -> sRGB in [0, 1], clipped
 def lab_to_rgb(lab: np.ndarray) -> np.ndarray:
-    """Convert CIE Lab under D65 to clipped sRGB in [0, 1]."""
-
     lab = np.asarray(lab, dtype=np.float64)
     if lab.ndim != 3 or lab.shape[-1] != 3:
         raise ValueError(f"Expected H x W x 3 Lab array, got {lab.shape}")
@@ -236,11 +203,11 @@ def lab_to_rgb(lab: np.ndarray) -> np.ndarray:
     return np.clip(rgb, 0.0, 1.0)
 
 
+# ── Lightness and chroma transforms ──────────────────────────────────────────
+# Remove all chroma, keep each foreground pixel's L*
 def achromatic_raw(
     rgb: np.ndarray, foreground: Optional[np.ndarray] = None
 ) -> np.ndarray:
-    """Remove all chroma while retaining each foreground pixel's L*."""
-
     arr = _check_rgb(rgb)
     lab = rgb_to_lab(arr)
     fg = _check_foreground(foreground, lab.shape[:2])
@@ -251,6 +218,7 @@ def achromatic_raw(
     return result
 
 
+# Remove chroma and equalise global foreground lightness and contrast (not CLAHE)
 def achromatic_equalized(
     rgb: np.ndarray,
     foreground: Optional[np.ndarray] = None,
@@ -260,12 +228,6 @@ def achromatic_equalized(
     reference_mean_l: Optional[float] = None,
     reference_sd_l: Optional[float] = None,
 ) -> Tuple[np.ndarray, Dict[str, float]]:
-    """Remove chroma and standardise global foreground lightness and contrast.
-
-    This is a transparent global mean/RMS-contrast equalisation, not CLAHE.  It
-    therefore keeps the spatial organisation of achromatic pattern intact.
-    """
-
     if target_sd_l <= 0:
         raise ValueError("target_sd_l must be positive")
     arr = _check_rgb(rgb)
@@ -273,12 +235,7 @@ def achromatic_equalized(
     fg = _check_foreground(foreground, lab.shape[:2])
     values = lab[..., 0][fg]
 
-    # WHICH statistics define "global"?  Supplying reference_mean_l/sd measured
-    # on the WHOLE BIRD removes between-bird lightness and contrast while
-    # keeping the lightness differences BETWEEN crops of one bird -- the
-    # dorsal/ventral gradient among them, which is plumage biology rather than
-    # a nuisance.  Falling back to the crop's own statistics removes that
-    # variation too, and then answers a different question.
+    # Whole-bird reference statistics keep the lightness differences between crops of one bird
     if reference_mean_l is None or reference_sd_l is None:
         old_mean = float(values.mean())
         old_sd = float(values.std(ddof=0))
@@ -313,19 +270,12 @@ def achromatic_equalized(
     return result, metadata
 
 
+# Set foreground L* to one value; metadata measures the chroma lost to the sRGB gamut (also per category)
 def chroma_isoluminant(
     rgb: np.ndarray,
     foreground: Optional[np.ndarray] = None,
     luminance_l: float = 50.0,
 ) -> Tuple[np.ndarray, Dict[str, object]]:
-    """Set foreground L* to one value and audit realised chroma after sRGB conversion.
-
-    Constant-L* Lab colours can lie outside the sRGB gamut.  Conversion then
-    reduces chroma in a hue-dependent way.  The returned metadata quantifies
-    that loss overall and within each Delhey category; callers must not describe
-    this arm as perfectly chroma-preserving without consulting those fields.
-    """
-
     if not 0.0 <= luminance_l <= 100.0:
         raise ValueError("luminance_l must lie in [0, 100]")
     arr = _check_rgb(rgb)
@@ -392,18 +342,12 @@ def chroma_isoluminant(
     return output, metadata
 
 
+# ── CN11 colour names ────────────────────────────────────────────────────────
+# Probabilities of the 11 CN11 terms (32 bins per channel, background = 0), not merged
 def cn11_probabilities(
     rgb: np.ndarray,
     foreground: Optional[np.ndarray] = None,
 ) -> np.ndarray:
-    """Return the published probabilities for the 11 basic CN11 terms.
-
-    CN11 quantises each 8-bit RGB channel into 32 bins. Background scores are
-    zero. The probabilities are not merged before classification: doing so
-    would give a target class such as red+pink a mechanical advantage over
-    source classes represented by a single CN11 term.
-    """
-
     arr = _check_rgb(rgb)
     fg = _check_foreground(foreground, arr.shape[:2])
     rgb8 = np.rint(arr[fg] * 255.0).astype(np.uint8)
@@ -417,16 +361,9 @@ def cn11_probabilities(
     return probabilities
 
 
+# ── Delhey classification ────────────────────────────────────────────────────
+# Numerically stable, branchless logistic gate for the fuzzy boundaries
 def _sigmoid(value: np.ndarray) -> np.ndarray:
-    """Numerically stable logistic gate used by fuzzy boundary calibration.
-
-    sigmoid(x) = exp(-log(1+exp(-x))) = exp(-logaddexp(0, -x)) - the same
-    numerically stable formula as before, but branchless: the previous
-    version's boolean masking (value[positive] = ..., value[~positive] = ...)
-    allocates and gather/scatters twice per call, which measurably adds up
-    over the ~50 calls one classify_delhey_rgb() makes on a multi-million
-    pixel image (profiled at ~4s of a ~13s total)."""
-
     value = np.asarray(value, dtype=np.float64)
     return np.exp(-np.logaddexp(0.0, -value))
 
@@ -437,14 +374,13 @@ def _window_gate(
     return _sigmoid((value - lower) / width) * _sigmoid((upper - value) / width)
 
 
+# Move (not duplicate) probability mass between neighbouring categories
 def _transfer_membership(
     memberships: np.ndarray,
     donors: Tuple[int, ...],
     recipient: int,
     fraction: np.ndarray,
 ) -> None:
-    """Move, rather than duplicate, probability mass between local neighbours."""
-
     fraction = np.clip(np.asarray(fraction, dtype=np.float64), 0.0, 1.0)
     for donor in donors:
         moved = memberships[..., donor] * fraction
@@ -452,6 +388,7 @@ def _transfer_membership(
         memberships[..., recipient] += moved
 
 
+# Map CN11 terms to Delhey names, baseline boundaries unchanged
 def _base_cn11_labels_and_memberships(
     probabilities: np.ndarray,
     raw_winner: np.ndarray,
@@ -459,8 +396,6 @@ def _base_cn11_labels_and_memberships(
     hue: np.ndarray,
     foreground: np.ndarray,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Map CN11 to Delhey names without changing the baseline boundaries."""
-
     shape = raw_winner.shape
     labels = np.full(shape, -1, dtype=np.int16)
     memberships = np.zeros((*shape, len(DELHEY_CATEGORIES)), dtype=np.float64)
@@ -507,9 +442,7 @@ def _base_cn11_labels_and_memberships(
             probabilities[..., source] * (1.0 - light_soft)
         )
 
-    # CN11 has no beige/tan term. Split its pink membership by hue so warm
-    # beige does not become red, while genuinely pink/magenta plumage remains
-    # part of Delhey's broad red class.
+    # CN11 has no beige: split pink by hue, so beige is not red and true pink stays red
     pink_hard = foreground & (raw_winner == cn["pink"])
     pink_is_red_hard = pink_hard & (
         (hue <= rule["pink_red_hue_max"])
@@ -534,6 +467,7 @@ def _base_cn11_labels_and_memberships(
     return labels, memberships
 
 
+# Calibrated hard labels and fuzzy memberships, per pixel
 def _classify_delhey_rgb_details_impl(
     rgb: np.ndarray,
     foreground: Optional[np.ndarray] = None,
@@ -546,8 +480,6 @@ def _classify_delhey_rgb_details_impl(
     np.ndarray,
     np.ndarray,
 ]:
-    """Return locally calibrated CN11 hard labels and fuzzy memberships."""
-
     arr = _check_rgb(rgb)
     fg = _check_foreground(foreground, arr.shape[:2])
     probabilities = cn11_probabilities(arr, fg)
@@ -565,9 +497,7 @@ def _classify_delhey_rgb_details_impl(
     target = {name: idx for idx, name in enumerate(DELHEY_CATEGORIES)}
     rule = DELHEY_CN11_CALIBRATION
 
-    # HARD primary: preserve the CN11 label except at predeclared source
-    # boundaries. Conditions are only allowed to override plausible donor
-    # classes, preventing a global repartition of colour space.
+    # Hard labels: keep CN11 except at predeclared boundaries, and only from plausible donor classes
     blue_override = (
         fg
         & np.isin(raw_winner, (cn["green"], cn["gray"]))
@@ -629,10 +559,7 @@ def _classify_delhey_rgb_details_impl(
     )
     labels[rufous_override & ~red_override & ~yellow_override] = target["rufous"]
 
-    # CN11 orange maps directly to rufous before the override above. Its pale,
-    # weakly chromatic tail is visually tan rather than rufous and therefore
-    # belongs with light brown. This is deliberately narrower than the gate
-    # that merely prevents brown from being promoted to rufous.
+    # Pale, weakly chromatic orange is tan: move it from rufous to light brown
     pale_rufous_to_light_brown_override = (
         fg
         & (labels == target["rufous"])
@@ -641,11 +568,7 @@ def _classify_delhey_rgb_details_impl(
     )
     labels[pale_rufous_to_light_brown_override] = target["light_brown"]
 
-    # Correct the systematic olive-green failure without treating hue alone as
-    # sufficient evidence. The CN11 green score must be appreciable and close
-    # to the strongest warm alternative. This retains true yellows in Serinus,
-    # Sturnella and other calibration birds while rescuing olive woodpeckers,
-    # parrots, pigeons and tanagers.
+    # Olive-green fix: CN11 green must be close to the strongest warm name (true yellows stay)
     warm_probability = np.maximum.reduce(
         (
             probabilities[..., cn["brown"]],
@@ -702,10 +625,7 @@ def _classify_delhey_rgb_details_impl(
     )
     labels[pale_yellow_white_override] = target["white"]
 
-    # CN11 frequently calls warm off-white feathers brown. Only pixels that are
-    # still light brown after the chromatic overrides may become white. The
-    # sloped boundary admits a slightly stronger cream cast at high L* while
-    # retaining genuinely tan, more chromatic feathers as light brown.
+    # Light brown with a weak cream cast becomes white; tan feathers stay light brown
     cream_white_chroma_limit = np.minimum(
         rule["cream_white_chroma_max"],
         rule["cream_white_chroma_at_L50"]
@@ -719,10 +639,7 @@ def _classify_delhey_rgb_details_impl(
     )
     labels[cream_white_override] = target["white"]
 
-    # Very weak chroma is more consistent with grey than brown, even when CN11
-    # narrowly favours its brown name. This corrects warm-grey feather pixels
-    # without moving clearly chromatic brown or rufous plumage. The light/dark
-    # grey boundary is intentionally independent of the brown boundary.
+    # Very weak chroma: grey rather than brown
     low_chroma_brown_override = (
         fg
         & np.isin(labels, (target["light_brown"], target["dark_brown"]))
@@ -733,10 +650,7 @@ def _classify_delhey_rgb_details_impl(
     labels[low_chroma_brown_override & gray_light_hard] = target["light_gray"]
     labels[low_chroma_brown_override & ~gray_light_hard] = target["dark_gray"]
 
-    # A second, deliberately narrow warm-grey gate catches pale, weakly
-    # chromatic belly feathers where CN11 only narrowly favours brown. Requiring
-    # both a yellowish hue and a substantial grey:brown probability ratio
-    # avoids turning ordinary tan plumage into grey.
+    # Narrow warm-grey gate for pale belly feathers (yellowish hue, high grey:brown ratio)
     gray_to_brown_ratio = probabilities[..., cn["gray"]] / np.maximum(
         probabilities[..., cn["brown"]], 1e-12
     )
@@ -750,8 +664,7 @@ def _classify_delhey_rgb_details_impl(
     )
     labels[warm_light_gray_override] = target["light_gray"]
 
-    # CN11 black includes the upper end of near-black. Retain truly dark pixels
-    # as black but call the lighter tail of that distribution dark grey.
+    # The lighter tail of CN11 black becomes dark grey
     black_to_dark_gray_override = (
         fg
         & (labels == target["black"])
@@ -796,9 +709,7 @@ def _classify_delhey_rgb_details_impl(
     )
     labels[dark_mark_black_override] = target["black"]
 
-    # FUZZY sensitivity: smoothly transfer probability mass across exactly the
-    # same local boundaries. Every transfer is conservative, so memberships
-    # remain non-negative and sum to one on foreground pixels.
+    # Soft memberships: move mass across the same boundaries (non-negative, sum to one)
     hue_width = rule["soft_hue_width"]
     chroma_width = rule["soft_chroma_width"]
     gray_light_soft = _sigmoid(
@@ -1115,10 +1026,8 @@ def _classify_delhey_rgb_details_impl(
     return labels, memberships, probabilities, raw_winner, lab, chroma, hue
 
 
+# Bounding box of a 2D boolean mask as (row_slice, col_slice); None if empty
 def _bbox_slices(mask: np.ndarray) -> Optional[Tuple[slice, slice]]:
-    """Bounding box of the True region of a 2D boolean mask, as
-    (row_slice, col_slice); None if the mask has no True pixel at all."""
-
     rows = np.any(mask, axis=1)
     if not rows.any():
         return None
@@ -1128,6 +1037,7 @@ def _bbox_slices(mask: np.ndarray) -> Optional[Tuple[slice, slice]]:
     return slice(int(y_hits[0]), int(y_hits[-1]) + 1), slice(int(x_hits[0]), int(x_hits[-1]) + 1)
 
 
+# Same as _impl, run on the mask's bounding box only (exact: every step is per pixel)
 def _classify_delhey_rgb_details(
     rgb: np.ndarray,
     foreground: Optional[np.ndarray] = None,
@@ -1140,21 +1050,6 @@ def _classify_delhey_rgb_details(
     np.ndarray,
     np.ndarray,
 ]:
-    """Same contract as _classify_delhey_rgb_details_impl, run only on the
-    bounding box of `foreground` instead of the whole canvas.
-
-    Every operation _impl performs (CN11 lookup, Lab conversion, every
-    hue/chroma/lightness override, every soft membership transfer) is
-    strictly per-pixel - none of them look at a neighbouring pixel - so
-    cropping to the bounding box before running them and embedding the
-    result back into full-canvas arrays afterwards is exact, not an
-    approximation: foreground pixels get bit-identical results, and every
-    caller already discards everything outside `foreground` anyway. On a
-    specimen whose mask only covers a fraction of the 2024x2024 canvas
-    (the norm here - see README "Ce que cette normalisation fait au
-    signal"), this is most of where classify_delhey_rgb's ~12s/image goes.
-    """
-
     arr = _check_rgb(rgb)
     fg = _check_foreground(foreground, arr.shape[:2])
 
@@ -1186,21 +1081,18 @@ def _classify_delhey_rgb_details(
     return labels, memberships, probabilities, raw_winner, lab, chroma, hue
 
 
+# Hard Delhey labels after calibration: -1 = background, else index into DELHEY_CATEGORIES
 def classify_delhey_rgb(
     rgb: np.ndarray, foreground: Optional[np.ndarray] = None
 ) -> np.ndarray:
-    """Return hard CN11 labels after documented local boundary calibrations.
-
-    Returns an integer array; -1 denotes alpha-defined background and
-    non-negative integers index :data:`DELHEY_CATEGORIES`.
-    """
-
     arr = _check_rgb(rgb)
     fg = _check_foreground(foreground, arr.shape[:2])
     labels, _, _, _, _, _, _ = _classify_delhey_rgb_details(arr, fg)
     return labels
 
 
+# ── Colour removal ───────────────────────────────────────────────────────────
+# Remove one chromatic category, keep L*; mask_mode 'hard' (main) or 'soft' (sensitivity)
 def ablate_delhey_colour(
     rgb: np.ndarray,
     category: str,
@@ -1209,20 +1101,6 @@ def ablate_delhey_colour(
     mask_feather_sigma: float = 0.0,
     mask_mode: str = "hard",
 ) -> Tuple[np.ndarray, np.ndarray, Dict[str, object]]:
-    """Remove one chromatic category while preserving pixel L*.
-
-    ``mask_mode='hard'`` is the primary intervention and uses the calibrated
-    categorical label. ``mask_mode='soft'`` is a sensitivity analysis: a pixel
-    with membership 0.8 retains 20% of its original a*/b* chroma at strength 1.
-
-    A thin wrapper around ablate_delhey_colour_from_details(): classifies
-    once, then applies. Call that function directly instead when you also
-    need to know which categories are present (e.g. to pick one) - it lets
-    you reuse the same classification for both instead of running
-    _classify_delhey_rgb_details() twice (src/ablations/a6_colour_removal.py
-    does exactly that).
-    """
-
     arr = _check_rgb(rgb)
     fg = _check_foreground(foreground, arr.shape[:2])
     details = _classify_delhey_rgb_details(arr, fg)
@@ -1231,6 +1109,7 @@ def ablate_delhey_colour(
     )
 
 
+# Same removal, from an already-computed classification
 def ablate_delhey_colour_from_details(
     rgb: np.ndarray,
     category: str,
@@ -1240,11 +1119,6 @@ def ablate_delhey_colour_from_details(
     mask_feather_sigma: float = 0.0,
     mask_mode: str = "hard",
 ) -> Tuple[np.ndarray, np.ndarray, Dict[str, object]]:
-    """Same as ablate_delhey_colour(), but takes an already-computed
-    classification (the tuple _classify_delhey_rgb_details() returns)
-    instead of recomputing it - the actual removal math, cheap on its own.
-    """
-
     if category not in DELHEY_CHROMATIC:
         raise ValueError(
             "Colour ablation is defined only for the eight chromatic categories: "
@@ -1313,8 +1187,6 @@ def ablate_delhey_colour_from_details(
         "foreground_only": foreground is not None,
     }
     result = lab_to_rgb(out)
-    # Lab round-tripping alone can change RGB values by small numerical amounts.
-    # Restore alpha-defined background exactly so no colour ablation is ever
-    # applied outside the bird, even indirectly through the conversion.
+    # Restore the background exactly (the Lab round trip can shift RGB slightly)
     result[~fg] = _check_rgb(rgb)[~fg]
     return result, (hard_mask if mask_mode == "hard" else applied_mask), metadata

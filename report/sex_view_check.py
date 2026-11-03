@@ -1,18 +1,3 @@
-"""How do view and sex change the results? Clean images, both models.
-
-View: every specimen has all three views (Back/Belly/Side), so views are compared
-on exactly the same birds. Also "3 views combined" = mean of the three reg_prob
-vectors per specimen (do the views carry complementary information?).
-Sex: labels are per species, so male and female images of a species have the same
-target. Restricted to species with both M and F images (U excluded), so the two
-subsets contain the same species.
-
-Metrics, per subset: per-habitat ROC-AUC (presence = share > 0, score = output)
-and the 10 group-pair AUCs of section 5 (main group = argmax of summed shares,
-score = log(sum outputs G1 / sum outputs G2)). Family bootstrap B=500, same draws
-for every subset, so differences between subsets get paired CIs.
-One model in memory at a time; only the reference rows are kept.
-"""
 import os
 import gc
 import json
@@ -21,6 +6,8 @@ import numpy as np
 import pandas as pd
 
 from paths import RUNS_DIR, LABELS_JSON
+
+# ── Settings ─────────────────────────────────────────────────────────────────
 BASE = RUNS_DIR
 SP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 os.makedirs(SP, exist_ok=True)
@@ -32,6 +19,7 @@ COMPARE = [("Belly", "Back"), ("Side", "Back"), ("Side", "Belly"),
            ("3 views", "Back"), ("3 views", "Belly"), ("3 views", "Side"), ("F", "M")]
 
 
+# ── Helpers ──────────────────────────────────────────────────────────────────
 def load(model):
     parts = []
     for k in range(3):
@@ -66,8 +54,8 @@ def make_wauc(counts):
     return wauc
 
 
+# AUCs per habitat (10, if asked) then per group pair (10): point and bootstrap [., B]
 def metrics(H, S, fidx, wauc):
-    """per-habitat AUCs (10) then group-pair AUCs (10): point [20], boots [20, B]."""
     P, BT = np.full(20, np.nan), np.full((20, B), np.nan)
     for h in range(10):
         y = H[:, h] > 0
@@ -83,6 +71,7 @@ def metrics(H, S, fidx, wauc):
     return P, BT
 
 
+# ── Per model ────────────────────────────────────────────────────────────────
 ci = lambda x: np.nanpercentile(x, [2.5, 97.5], axis=-1)
 names = json.load(open(LABELS_JSON))
 out = {"labels": list(names) + [f"{GN[a]} vs {GN[b]}" for a, b in PAIRS], "B": B}
@@ -139,6 +128,7 @@ for model in ("main", "sham"):
     del res
     gc.collect()
 
+# ── Write ────────────────────────────────────────────────────────────────────
 json.dump(out, open(f"{SP}/sex_view_check.json", "w"), indent=1)
 for model in ("main", "sham"):
     print(f"\n== {model} ==")

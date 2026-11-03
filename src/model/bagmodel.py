@@ -1,10 +1,3 @@
-"""Backbone + MIL pooling + two heads, wired together (protocole §1).
-
-Input is a batch of sacs, each a stack of 16 crops. The backbone runs on
-all (B*16) crops flattened into one batch — it doesn't need to know about
-the bag structure, only the attention pooling does.
-"""
-
 from __future__ import annotations
 
 import torch
@@ -15,6 +8,7 @@ from .heads import Heads
 from .mil import GatedAttentionPool
 
 
+# ── Bag model ────────────────────────────────────────────────────────────────
 class BagModel(nn.Module):
     def __init__(self, cfg: dict):
         super().__init__()
@@ -23,8 +17,8 @@ class BagModel(nn.Module):
         self.pool = GatedAttentionPool(feat_dim)
         self.heads = Heads(feat_dim, cfg["num_habitats"], dropout=cfg["head_dropout"])
 
+    # crops (B, N, 3, 224, 224) -> cls_logits, reg_logits, attention
     def forward(self, crops: torch.Tensor):
-        """crops: (B, N, 3, 224, 224) -> cls_logits, reg_logits, attention."""
         b, n = crops.shape[:2]
         flat = crops.reshape(b * n, *crops.shape[2:])
         features = self.backbone(flat).reshape(b, n, -1)

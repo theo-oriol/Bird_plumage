@@ -1,13 +1,3 @@
-"""Repass one fold's validation set through every condition in the §7 grid,
-at frozen weights, and summarise the result per condition.
-
-Two passes: first collect every (image, condition) prediction into one
-DataFrame (this is the slow part — one DINOv3-L forward pass per sac), then
-compute metrics.py's summaries from that DataFrame. Splitting it this way
-means the summary can be recomputed (different n_bootstrap, say) without
-re-running the model.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -27,6 +17,7 @@ from . import metrics as metrics_mod
 from .a6_presence import load_manifest
 
 
+# ── Checkpoint ───────────────────────────────────────────────────────────────
 def load_checkpoint(model: BagModel, checkpoint_path: Path) -> None:
     state = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     model.backbone.load_state_dict(state["backbone"])
@@ -34,6 +25,7 @@ def load_checkpoint(model: BagModel, checkpoint_path: Path) -> None:
     model.heads.load_state_dict(state["heads"])
 
 
+# ── Collect predictions ──────────────────────────────────────────────────────
 def collect_predictions(cfg: Dict[str, Any], checkpoint_path: Path, fold: int) -> pd.DataFrame:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = BagModel(cfg).to(device)
@@ -49,13 +41,7 @@ def collect_predictions(cfg: Dict[str, Any], checkpoint_path: Path, fold: int) -
               f"(run scripts/build_a6_presence_manifest.py to include them)")
 
     dataset = EvalDataset(valid_df, cfg, a6_manifest=a6_manifest)
-    # cfg["batch_size"] (128) is the *gradient-accumulation* target from
-    # training (see optim.yaml) - never an actual GPU batch, since training
-    # only ever forwards micro_batch_size sacs at once. Using it directly
-    # here would try to forward batch_size x 16 crops in one call (2048
-    # crops for the current config) - vits16 was measured to OOM on this
-    # GPU at just 20 sacs (320 crops), so this must use micro_batch_size,
-    # the config key that actually controls per-forward GPU load.
+    # Forward micro_batch_size bags at a time (batch_size is only the accumulation target)
     loader = DataLoader(dataset, batch_size=cfg["micro_batch_size"], shuffle=False, num_workers=cfg["num_workers"])
 
     family_by_stem = dict(zip(valid_df["stem"], valid_df["family"]))
@@ -83,6 +69,7 @@ def collect_predictions(cfg: Dict[str, Any], checkpoint_path: Path, fold: int) -
     return pd.DataFrame(rows)
 
 
+# ── Summarise ────────────────────────────────────────────────────────────────
 def summarise(predictions: pd.DataFrame, n_bootstrap: int, seed: int) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     reference = predictions[predictions["condition_name"] == "reference"].set_index("stem")

@@ -1,73 +1,29 @@
-# Paths used by training and evaluation. Nothing else in this project should
-# hardcode a path. The machine-specific roots are ${VAR} placeholders filled
-# from the .env file at the repository root (copy .env.example to .env); see
-# src/env.py. Found by scanning the disk for the files the protocol PDF names;
-# see README.md "Provenance des chemins" for how each one was identified.
+# Paths for training and evaluation; ${VAR} roots come from .env (see src/env.py)
 
-# Root of the NPY dataset (one *.rgb.zst + *.cand_128.zst + *.cand_224.zst per
-# specimen, vue "Back" uniquement — cf. protocole §2).
-# Moved again on 2026-09-23: the whole Datasets/ tree (source + every offline
-# cache below) was rsync'd from the LaCie exFAT-over-USB drive to this
-# SATA-attached ext4 drive (better suited to a 41,901-file flat directory -
-# exFAT's linear directory table was the source of most of this project's
-# slow `ls`/`stat`/`du` calls; ext4's hashed B-tree index handles this
-# layout far better) - verified file-count-identical to the LaCie copy
-# before switching this file over. LaCie's copies are untouched, still
-# there as a backup, just no longer what these paths point to.
+# NPY dataset: one .rgb.zst + .cand_128.zst + .cand_224.zst per specimen (Back folder)
 dataset_dir: ${DATASETS_DIR}/Familly_split_no_ablation/NEW_Segmented-Aves-Back-NPY
 
-# Each offline cache lives in its own top-level folder, sibling to
-# Familly_split_no_ablation (which holds only the raw, unmodified dataset -
-# Back/Belly/Side). Each of these paths names the Back-view leaf directly
-# (protocole §2, "vue Back uniquement" - the one the training/eval pipeline
-# actually reads); the build scripts derive the Belly/Side siblings from
-# this same path's parent (see each script's own root-derivation check) -
-# moving one of these paths to a different view or a differently-laid-out
-# root will make that check fail loudly rather than silently building in
-# the wrong place.
+# Offline caches: each path names the Back folder; Belly and Side are its siblings
 
-# Where the offline-standardized A2 cache lives once scripts/build_a2_cache.py
-# has been run (protocole §2 : A2 "n'est pas calculée du tout, elle est lue
-# dans un jeu distinct, standardisé hors ligne"). Does not exist until built.
+# A2 cache (scripts/build_a2_cache.py)
 dataset_a2_dir: ${DATASETS_DIR}/Familly_split_A2/NEW_Segmented-Aves-Back-NPY
 
-# A1 and A7 are deterministic given the specimen (no drawn parameter), so —
-# same reasoning as A2 — they're precomputed once offline instead of being
-# recomputed by every sac that draws them online (classify_delhey_rgb-adjacent
-# CIELAB math was the dominant per-epoch cost; see README "Plan de reduction
-# du temps d'ablation"). Built by scripts/build_a1_cache.py / build_a7_cache.py.
+# A1 and A7 caches (scripts/build_a1_cache.py, scripts/build_a7_cache.py)
 dataset_a1_dir: ${DATASETS_DIR}/Familly_split_A1/NEW_Segmented-Aves-Back-NPY
 dataset_a7_dir: ${DATASETS_DIR}/Familly_split_A7/NEW_Segmented-Aves-Back-NPY
 
-# A6's per-pixel Delhey colour classification is also deterministic given the
-# specimen (only the *category to remove* is drawn per sac, not the
-# classification itself) - precomputed once here instead of being recomputed
-# by every consumer (A6's own online draw, the A6 presence manifest) that
-# needs it. Built by scripts/build_a6_classification_cache.py; does not
-# exist until built. One int8 label map per specimen (see
-# src/ablations/a6_colour_removal.py build_classification()).
+# A6 classification cache, one int8 label map per specimen (scripts/build_a6_classification_cache.py)
 dataset_a6_classification_dir: ${DATASETS_DIR}/Familly_split_A6_classification/NEW_Segmented-Aves-Back-NPY
 
-# Fold tables and crosswalk (protocole §7). Row/family counts were checked
-# against the numbers printed in the PDF (37890+54600+30471 images,
-# 83+77+80 families, 241 families / 36 orders / 9143 species in the
-# crosswalk) — they match exactly, so this is almost certainly the source
-# the protocol describes.
-# All inside this repository (data/ and configs/).
+# Fold tables, crosswalk and habitat labels, all inside this repository
 fold_dir: ${REPO_ROOT}/data/cross/cross_version_1_FAM
 crosswalk_csv: ${REPO_ROOT}/data/raw/crosswalk_image_habitat_v0.csv
 habitat_codes_json: ${REPO_ROOT}/configs/labelname.json
 habitat_names_json: ${REPO_ROOT}/configs/labeltoname.json
 
-# CIELAB / colour-naming module supplied for the project (A1, A2's building
-# block, A6): copied as-is into src/color.py, with its resource src/resources/w2c.mat.
+# Colour module (A1, A2, A6): src/color.py with src/resources/w2c.mat
 
-# DINOv3 backbones: local torch.hub checkout + pretrained weights. One entry per
-# backbone_name that configs/model_{s,l,h}.yaml can select (src/model/
-# backbone.py looks this dict up by cfg["backbone"]["name"]).
-# dinov3_vits16 (S, embed_dim=384) and dinov3_vit7b16 (the 7B "giant" model,
-# embed_dim=4096 - used here as the "H" tier since the real dinov3_vith16plus,
-# embed_dim=1280, has no weights downloaded on this machine) added 2026-09-17.
+# DINOv3: local torch.hub repo and weights, one entry per backbone name (vit7b16 stands in for 'H')
 dinov3_repo: ${DINOV3_REPO}
 dinov3_weights:
   dinov3_vits16: ${DINOV3_WEIGHTS_DIR}/dinov3_vits16.pth
