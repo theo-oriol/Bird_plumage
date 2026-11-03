@@ -65,7 +65,8 @@ paired comparisons use the same resamples. In the report, an AUC whose interval 
 
 ## Other scripts (not in the report)
 
+- `order_check.py`: writes the family &rarr; order dictionary from the crosswalk (`../data/family_order.json`),
+  then checks that the results do not come from recognising the bird's order: order-only baseline,
+  AUCs computed within each order (sham, clean images) and ablation &Delta; within order (main). Writes `order_check.json`.
 - `build_all_predictions.py`: merges every `runs/*/eval/predictions.pkl` into `../runs/all_predictions.parquet`
   (one row per run &times; image &times; condition; columns `hab_*`, `reg_*`, `cls_*` per habitat).
-- `scat_pilot.py`: wavelet scattering on the evaluation crops, to find at which spatial scale the signal is.
-  Unfinished (the full run is too heavy for a workstation). Needs Kymatio: `pip install --target pylib kymatio==0.3.0 appdirs`.
