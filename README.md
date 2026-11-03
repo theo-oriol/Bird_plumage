@@ -33,7 +33,7 @@ chaque ablation sur un vrai spécimen (à ouvrir avec le kernel `torch`).
 
 ## Provenance des chemins (`configs/paths.yaml`)
 
-Les racines (`DATASETS_DIR`, `BIRD_PROJECT_DIR`, `DINOV3_REPO`, `DINOV3_WEIGHTS_DIR`) viennent du fichier
+Les racines (`DATASETS_DIR`, `DINOV3_REPO`, `DINOV3_WEIGHTS_DIR`) viennent du fichier
 `.env` à la racine du dépôt (modèle : `.env.example`, chargé par `src/env.py`).
 
 Rien n'était fourni au départ — chaque chemin a été retrouvé sur la machine
@@ -44,8 +44,8 @@ utilisé :
   Format vérifié directement sur un spécimen réel (`.rgb.zst` →
   `(2024, 2024, 3)` uint8 ; `.cand_*.zst` → le format exact attendu par
   `src/sampling.py`).
-- **Folds** (`cross_version_1_FAM`) + **crosswalk** : trouvés dans
-  `bird_project/data/`. Confirmés par coïncidence exacte avec les chiffres
+- **Folds** (`cross_version_1_FAM`) + **crosswalk** : dans `data/cross/` et
+  `data/raw/` de ce dépôt. Confirmés par coïncidence exacte avec les chiffres
   du protocole : 37890+54600+30471 images, 83+77+80 familles, 241
   familles/36 ordres/9143 espèces dans le crosswalk, et — une fois
   restreint à la vue Back présente dans ce dataset NPY — exactement
@@ -54,9 +54,8 @@ utilisé :
   revérifie tout ça.
 - **`color.py`** (CIELAB, colour-naming CN11, calibration Delhey) : fourni
   tel quel (copié dans `src/color.py`), avec sa ressource `w2c.mat`.
-- **DINOv3-L** : poids + repo torch.hub locaux trouvés sur la machine, même
-  schéma de chargement que `bird_project/src/models/backbone.py`
-  (`torch.hub.load(..., source="local")`).
+- **DINOv3-L** : poids + repo torch.hub locaux trouvés sur la machine, chargés avec
+  `torch.hub.load(..., source="local")`.
 - **`mil5_metrics_per_class.csv`** (prévalences d'habitat, citée §1/§7) :
   introuvable sur la machine. Les poids BCE `w_c ∝ 1/f_c` sont donc
   **calculés directement depuis le fold d'entraînement**
@@ -160,9 +159,8 @@ copiés tels quels car la géométrie ne dépend pas de la couleur) :
   l'ensemble des spécimens — donc trois passes (stats → cible → application),
   pas une. La cible (`target_pdf`) et M/S sont sauvegardés dans
   `runs/grayscale_norm_lum_metadata/<vue>/` et réutilisés si le script est
-  relancé (`--recompute-metadata` pour forcer). Reprend la logique corrigée
-  de `bird_project/scripts/generate_meta_data_luminance.py` : l'ancienne
-  version (`generate_meta_data_grayscale.py`) supposait que toutes les
+  relancé (`--recompute-metadata` pour forcer). Corrige un bug
+  d'un ancien générateur, qui supposait que toutes les
   images avaient le même nombre de pixels que la première, et laissait
   silencieusement de la mémoire non initialisée dans les images ayant plus
   de pixels — corrigé ici en recalculant les comptages par image (méthode

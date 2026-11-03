@@ -1,7 +1,7 @@
 """Does the female advantage grow with sexual dimorphism? Clean images, both models.
 
 Species with both sexes (as in sex_view_check.py). Dimorphism of a species =
-mean of its back and belly indices (bird_project/dimorphism_species_*.csv:
+mean of its back and belly indices (data/dimorphism/dimorphism_species_*.csv:
 male-female plumage distance relative to within-sex distances; ~1 = monomorphic).
 Species are cut into tertiles of that index. Within each tertile: AUCs on male
 images and on female images (per habitat + group pairs), F - M with family

@@ -1,7 +1,6 @@
 """DINOv3-L backbone, frozen except LoRA adapters (protocole §1).
 
-Loaded from a local torch.hub checkout, same pattern already used elsewhere
-on this machine (bird_project/src/models/backbone.py) - torch.hub.load with
+Loaded from a local torch.hub checkout - torch.hub.load with
 source="local" against a cloned facebookresearch/dinov3 repo, weights from a
 local .pth (DINOv3 checkpoints are gated on the HF hub, so this avoids
 needing network access / a token at train time).

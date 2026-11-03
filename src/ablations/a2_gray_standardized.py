@@ -161,7 +161,7 @@ def _counts_from_pdf(pdf: np.ndarray, n: int) -> np.ndarray:
     """Integer counts summing to exactly n, proportional to pdf (largest-
     remainder method): the target adapts to *this* image's own pixel count
     instead of assuming every image has the same N - the bug this whole
-    approach exists to avoid (see bird_project's generate_meta_data_luminance.py)."""
+    approach exists to avoid."""
     exact = np.asarray(pdf, dtype=np.float64) * n
     counts = np.floor(exact).astype(np.int64)
     short = n - int(counts.sum())

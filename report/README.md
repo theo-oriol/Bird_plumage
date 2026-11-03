@@ -16,10 +16,9 @@ All scripts read their paths through `paths.py`; `run_all.sh` reads `PYTHON` fro
 | Variable | What it points to | Used by |
 |---|---|---|
 | `PYTHON` | Python with torch, numpy, pandas, scikit-learn, scipy, pyarrow | `run_all.sh` |
-| `LABELS_JSON` | `labeltoname.json`, the 10 habitat names in model-output order | sections 1–6 |
-| `DIMORPHISM_DIR` | folder with `dimorphism_species_{back,belly}.csv` (dimorphism index) | 6.3, 6.5 |
-| `DATASET_DIR` | image dataset, folder containing `Familly_split_<condition>/` | `hist_features*.py` (crop rebuild for 5.3) |
+| `DATASETS_DIR` | image dataset, folder containing `Familly_split_<condition>/` | `hist_features*.py` (crop rebuild for 5.3) |
 | `PROJECT_ROOT`, `RUNS_DIR` | optional: default to this repository and its `runs/` | almost every script |
+| `LABELS_JSON`, `DIMORPHISM_DIR` | optional: default to `configs/labeltoname.json` and `data/dimorphism/` in this repository | sections 1–6; 6.3, 6.5 |
 
 The predictions are read from `runs/{main,sham}_fold{0,1,2}/eval/predictions.pkl` (plus `metrics.csv`,
 `manifest.json`); `hist_features_crops.py` also imports the training/evaluation code in `src/`.

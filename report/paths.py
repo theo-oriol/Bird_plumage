@@ -1,9 +1,9 @@
 """Paths used by the report scripts, read from the .env file at the repository root
 (see .env.example there).
 
-Paths inside this repository default to locations relative to it; paths to data
-outside the repository (habitat names, dimorphism tables, image dataset) must be
-set in .env or as environment variables.
+Paths inside this repository (runs, habitat names, dimorphism tables) default to
+locations relative to it; the image dataset, outside the repository, must be set
+in .env or as an environment variable.
 """
 import os
 
@@ -39,11 +39,12 @@ RUNS_DIR = _get("RUNS_DIR", os.path.join(PROJECT_ROOT, "runs"))      # runs/<mod
 def __getattr__(name):
     """External paths: only required by the scripts that use them."""
     if name == "LABELS_JSON":
-        # labeltoname.json: the 10 habitat names (default: inside BIRD_PROJECT_DIR)
-        return os.environ.get("LABELS_JSON") or os.path.join(_get("BIRD_PROJECT_DIR"), "configs", "labeltoname.json")
+        # labeltoname.json: the 10 habitat names
+        return os.environ.get("LABELS_JSON") or os.path.join(PROJECT_ROOT, "configs", "labeltoname.json")
     if name == "DIMORPHISM_CSV":
-        # dimorphism_species_{back,belly}.csv (default: inside BIRD_PROJECT_DIR)
-        return os.path.join(os.environ.get("DIMORPHISM_DIR") or _get("BIRD_PROJECT_DIR"), "dimorphism_species_{}.csv")
+        # dimorphism_species_{back,belly}.csv
+        return os.path.join(os.environ.get("DIMORPHISM_DIR") or os.path.join(PROJECT_ROOT, "data", "dimorphism"),
+                            "dimorphism_species_{}.csv")
     if name == "DATASET_DIR":
         return _get("DATASETS_DIR")                                  # contains Familly_split_<condition>/
     raise AttributeError(name)

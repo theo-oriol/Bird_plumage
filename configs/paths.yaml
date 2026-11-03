@@ -53,16 +53,16 @@ dataset_a6_classification_dir: ${DATASETS_DIR}/Familly_split_A6_classification/N
 # 83+77+80 families, 241 families / 36 orders / 9143 species in the
 # crosswalk) — they match exactly, so this is almost certainly the source
 # the protocol describes.
-fold_dir: ${BIRD_PROJECT_DIR}/data/cross/cross_version_1_FAM
-crosswalk_csv: ${BIRD_PROJECT_DIR}/data/raw/crosswalk_image_habitat_v0.csv
-habitat_codes_json: ${BIRD_PROJECT_DIR}/configs/labelname.json
-habitat_names_json: ${BIRD_PROJECT_DIR}/configs/labeltoname.json
+# All inside this repository (data/ and configs/).
+fold_dir: ${REPO_ROOT}/data/cross/cross_version_1_FAM
+crosswalk_csv: ${REPO_ROOT}/data/raw/crosswalk_image_habitat_v0.csv
+habitat_codes_json: ${REPO_ROOT}/configs/labelname.json
+habitat_names_json: ${REPO_ROOT}/configs/labeltoname.json
 
 # CIELAB / colour-naming module supplied for the project (A1, A2's building
 # block, A6): copied as-is into src/color.py, with its resource src/resources/w2c.mat.
 
-# DINOv3 backbones: local torch.hub checkout + pretrained weights, same
-# pattern already used in bird_project/src/models/backbone.py. One entry per
+# DINOv3 backbones: local torch.hub checkout + pretrained weights. One entry per
 # backbone_name that configs/model_{s,l,h}.yaml can select (src/model/
 # backbone.py looks this dict up by cfg["backbone"]["name"]).
 # dinov3_vits16 (S, embed_dim=384) and dinov3_vit7b16 (the 7B "giant" model,
