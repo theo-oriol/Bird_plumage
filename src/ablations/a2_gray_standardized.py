@@ -194,6 +194,8 @@ def build(
     l_matched = hist_match_exact(lum_match(lab[..., 0][mask], M, S, VMAX), target_pdf, VMAX, rng)
     out_lab = lab.copy()
     out_lab[..., 0][mask] = l_matched
+    out_lab[..., 1][mask] = 0.0  # greyscale: a* = b* = 0, as in A1
+    out_lab[..., 2][mask] = 0.0
 
     rgb_out = lab_to_rgb(out_lab)
     out_uint8 = rgb_uint8.copy()

@@ -68,5 +68,7 @@ paired comparisons use the same resamples. In the report, an AUC whose interval 
 - `order_check.py`: writes the family &rarr; order dictionary from the crosswalk (`../data/family_order.json`),
   then checks that the results do not come from recognising the bird's order: order-only baseline,
   AUCs computed within each order (sham, clean images) and ablation &Delta; within order (main). Writes `order_check.json`.
+- `order_probe.py`: linear probe predicting the order from the frozen DINOv3-S features of the 16 evaluation crops
+  (`scripts/extract_dinov3s_features.py`), trained on the other folds' families; 1, 4 and 16 crops. Writes `order_probe.json`.
 - `build_all_predictions.py`: merges every `runs/*/eval/predictions.pkl` into `../runs/all_predictions.parquet`
   (one row per run &times; image &times; condition; columns `hab_*`, `reg_*`, `cls_*` per habitat).
