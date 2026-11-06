@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 import torch
-from torch.optim import Adam
+from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -100,8 +100,14 @@ class Trainer:
             temperature=cfg["loss_balance_temperature"],
             weight_band=tuple(cfg["loss_balance_weight_band"]),
         )
-        self.optimizer = Adam(
-            self.model.trainable_parameters(), lr=cfg["learning_rate"], weight_decay=cfg["weight_decay"]
+        # AdamW, no decay on the pool or biases: Adam's L2 decay had collapsed attention to uniform 1/16
+        decay, no_decay = [], []
+        for name, p in self.model.named_parameters():
+            if p.requires_grad:
+                (no_decay if name.startswith("pool.") or p.ndim < 2 else decay).append(p)
+        self.optimizer = AdamW(
+            [{"params": decay, "weight_decay": cfg["weight_decay"]}, {"params": no_decay, "weight_decay": 0.0}],
+            lr=cfg["learning_rate"],
         )
         self.scheduler = CosineAnnealingLR(self.optimizer, T_max=cfg["epochs_max"])
         self.use_amp = cfg["use_amp"] and self.device.type == "cuda"

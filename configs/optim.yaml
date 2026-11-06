@@ -2,7 +2,7 @@
 epochs_max: 100
 early_stop_patience: 20       # on the fixed 0.5/0.5 KL/BCE train loss, never validation
 early_stop_smoothing: 5       # epochs averaged into the smoothed loss before comparing
-optimizer: adam
+optimizer: adamw   # decoupled decay; none on the attention pool or biases
 weight_decay: 0.01
 learning_rate: 1.0e-4
 scheduler: cosine_annealing    # over epochs_max, even if early stop ends the run sooner

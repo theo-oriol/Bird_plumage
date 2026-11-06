@@ -71,5 +71,5 @@ class BagDataset(Dataset):
             "habitat": habitat,
             "support": support,
             "stem": stem,
-            "condition": str(condition),
+            "condition": str(condition)
         }

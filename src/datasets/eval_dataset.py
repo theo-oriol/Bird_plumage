@@ -22,6 +22,7 @@ class EvalDataset(Dataset):
         self,
         df: pd.DataFrame,
         cfg: dict,
+        draw = None,
         a6_manifest: Optional[pd.DataFrame] = None,
     ):
         self.stems = df["stem"].to_numpy()
@@ -30,7 +31,7 @@ class EvalDataset(Dataset):
         self.stem_to_view = dict(zip(df["stem"], df["view"]))
         # One folder set per view; each stem only exists in its own view's folder
         self.view_dirs = resolve_view_dirs(cfg)
-
+        self.draw = draw
         self._fixed = fixed_conditions()
         self._items = self._build_index(a6_manifest)
 
@@ -61,7 +62,9 @@ class EvalDataset(Dataset):
     def __getitem__(self, index: int):
         stem, ec, a6_category = self._items[index]
         dirs = self.view_dirs[self.stem_to_view[stem]]
-        geometry_rng = derive_rng("eval-geometry", stem)
+        geometry_rng = (derive_rng("eval-geometry", stem) if self.draw is None
+                            else derive_rng("eval-geometry", "run", self.draw, stem))
+        
         condition_rng = derive_rng("eval-condition", stem, ec.name)
 
         crops, meta = chain.build_bag(
@@ -77,6 +80,7 @@ class EvalDataset(Dataset):
             fixed_a6_category=a6_category,
             positions_rng=geometry_rng,
             dataset_a6_class_dir=dirs["dataset_a6_class_dir"],
+            allow_flip=False,  # no flip in evaluation
         )
 
         crops = crops.astype(np.float32) / 255.0
@@ -91,4 +95,5 @@ class EvalDataset(Dataset):
             "habitat": habitat,
             "stem": stem,
             "condition_name": ec.name,
+            "positions": np.array(meta["positions"], dtype=np.int32)
         }

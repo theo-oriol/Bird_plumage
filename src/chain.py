@@ -70,6 +70,7 @@ def build_bag(
     fixed_a6_category: str = None,
     positions_rng: np.random.Generator = None,
     dataset_a6_class_dir: Path = None,
+    allow_flip: bool = True,
 ) -> Tuple[np.ndarray, Dict[str, object]]:
     geometry_rng = positions_rng if positions_rng is not None else rng
     meta: Dict[str, object] = {"stem": stem, "condition": str(condition)}
@@ -87,7 +88,8 @@ def build_bag(
 
     # ── Step 2: vertical flip (drawn here, applied after the blur) ───────────
     # Median blur commutes with the flip; blurring before flipping is ~10% faster
-    flip = bool(geometry_rng.random() < 0.5)
+    # Always drawn, so turning the flip off leaves the crop positions unchanged
+    flip = bool(geometry_rng.random() < 0.5) and allow_flip
     meta["flip"] = flip
 
     # ── Step 5: crop positions (drawn early) ─────────────────────────────────
