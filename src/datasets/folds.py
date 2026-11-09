@@ -39,11 +39,11 @@ def load_fold(paths_cfg: dict, fold: int, split: str) -> pd.DataFrame:
     csv_path = Path(paths_cfg["fold_dir"]) / f"{split}_fold_{fold}.csv"
     df = pd.read_csv(csv_path)
 
-    # Stem c'est le nom du fichier sans extensions ou root
+    # Stem = file name without extension or directory
     df["stem"] = df["name_of_img"].map(_stem)
     df["view"] = df["name_of_img"].map(view_of_name)
 
-    # Vérifie que les fichiers du csv sont dans le dossier de leur vue
+    # Keep only the CSV files present in their view's folder
     source_root = check_back_leaf_and_get_parent(Path(paths_cfg["dataset_dir"]), "dataset_dir")
     kept = []
     for view in VIEWS:
@@ -51,7 +51,7 @@ def load_fold(paths_cfg: dict, fold: int, split: str) -> pd.DataFrame:
         kept.append(df[(df["view"] == view) & df["stem"].isin(available)])
     df = pd.concat(kept, ignore_index=True) if kept else df.iloc[0:0]
 
-    # Normalise la distribution d'habitat
+    # Normalise the habitat distribution
     y = df[HABITAT_CODE_COLUMNS].to_numpy(dtype=np.float64) / 100.0
     row_sums = y.sum(axis=1, keepdims=True)
     row_sums = np.where(row_sums < 1e-12, 1.0, row_sums)

@@ -16,7 +16,7 @@ def admissible_by_size() -> Dict[int, List[frozenset]]:
     by_size: Dict[int, List[frozenset]] = {k: [] for k in K_PROBABILITIES}
     for k in K_PROBABILITIES:
         for combo in combinations(ALL_CODES, k):
-            # c'est un set imuable 
+            # immutable set
             codes = frozenset(combo)
             if is_admissible(codes):
                 by_size[k].append(codes)
@@ -31,12 +31,12 @@ _ADMISSIBLE_BY_SIZE = admissible_by_size()
 def draw_condition(rng: np.random.Generator, enabled_codes: Optional[FrozenSet[str]] = None) -> Condition:
     sizes = list(K_PROBABILITIES.keys())
     probs = list(K_PROBABILITIES.values())
-    # Choisi la pool d'ablation aléatoirement entre 0 et 3 (en utilisant K_PROBABILITIES)
+    # Draw the number of ablations (0 to 3) from K_PROBABILITIES
     k = int(rng.choice(sizes, p=probs))
     pool = _ADMISSIBLE_BY_SIZE[k]
-    # Choisi la combinaison d'ablation aléatoirement dans le pool choisi précedemment 
+    # Draw one admissible combination of that size
     codes = pool[int(rng.integers(len(pool)))]
-    # Condition est un objet qui stock les conditions selectionné
+    # Condition holds the selected ablation codes
     condition = Condition(active=codes)
 
     if enabled_codes is None or condition.active <= enabled_codes:

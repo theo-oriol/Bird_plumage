@@ -38,6 +38,10 @@ run hist_compare.py
 run hist_group_ovr.py
 run hist_per_habitat.py
 run pattern_only.py
+run hist_features_crops.py A2
+run hist_baseline.py crops_A2
+run hist_baseline.py crops_A2 L
+run hist_a2_check.py
 run texture_check.py
 
 # ── Section 6: view, sex, dimorphism ─────────────────────────────────────────

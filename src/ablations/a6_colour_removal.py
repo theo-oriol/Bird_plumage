@@ -32443,7 +32443,7 @@ def ablate_delhey_colour_from_details(
 
 # ── A6 settings ──────────────────────────────────────────────────────────────
 CODE = "A6"
-STRENGTH = 1.0  # force = 1, retrait total (pas de retrait partiel, §3)
+STRENGTH = 1.0  # strength 1 = full removal (no partial removal, §3)
 A6_PRESENCE_MIN_FRACTION = 0.01  # share of the bird's pixels a category needs to count as present
 
 

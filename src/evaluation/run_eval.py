@@ -48,7 +48,7 @@ def collect_predictions(cfg: Dict[str, Any], checkpoint_path: Path, fold: int) -
 
     rows = []
     with torch.no_grad():
-        for batch in tqdm(loader, desc=f"fold {fold} eval", unit="sac"):
+        for batch in tqdm(loader, desc=f"fold {fold} eval", unit="bag"):
             crops = batch["crops"].to(device)
             cls_logits, reg_logits, _attention = model(crops)
             cls_prob = torch.sigmoid(cls_logits).cpu().numpy()

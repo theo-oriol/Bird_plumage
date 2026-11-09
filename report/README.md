@@ -6,7 +6,7 @@ all their outputs (JSON, CSV, NPY/NPZ and figures) to `results/`, which is creat
 
 **One command:** `bash run_all.sh` (runs the steps below in order, one job at a time, with `nice -n 10`).
 Scripts that import torch need `KMP_AFFINITY=disabled` (`run_all.sh` sets it).
-Steps 15–16 rebuild the exact evaluation crops from the image dataset and are the heaviest (hours).
+Steps 15–16 and 20b rebuild the exact evaluation crops from the image dataset and are the heaviest (hours).
 
 ## Setup: paths
 
@@ -47,6 +47,7 @@ The predictions are read from `runs/{main,sham}_fold{0,1,2}/eval/predictions.pkl
 | 18 | `hist_group_ovr.py` | `hist_group_ovr_main.json` | 5.3 group level |
 | 19 | `hist_per_habitat.py` | `hist_per_habitat.json` | 5.3 habitat level |
 | 20 | `pattern_only.py` | `pattern_only.json` | 5.3 sources on their own (A2 = pattern only) |
+| 20b | `hist_features_crops.py A2`, `hist_baseline.py crops_A2` / `crops_A2 L`, `hist_a2_check.py` | `hist_crop_chunks_A2/`, `hist_baseline_crops_A2*.json`, `hist_a2_check.json` | 5.3 check: histogram model on the A2 crops (pooled and within-fold AUC) vs. the network on A2 |
 | 21 | `texture_check.py` | `texture_check.json` | 5.3 network vs. histogram within each channel |
 | 22 | `sex_view_check.py` | `sex_view_check.json` | 6.1–6.2 subset sizes |
 | 23 | `sex_dimorph.py` | `sex_dimorph.json` | 6.3 tertiles |

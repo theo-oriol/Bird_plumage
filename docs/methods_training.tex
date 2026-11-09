@@ -1,0 +1,246 @@
+% ── Methods: model and training ──────────────────────────────────────────────
+% Fragment to \input{} into the paper. Needs amsmath, amssymb, booktabs, array.
+% Every value below is read from configs/*.yaml and src/ (see the % refs).
+% Lines marked CHECK need a value or a decision that is not in this repository.
+
+\subsection{Habitat targets}
+
+Each specimen image $i$ (one of three views: back, belly, side) inherits the
+habitat profile of its species, given as the fraction of use of $C=10$ habitat
+classes derived from the IUCN level-1 habitat map of Jung et al.\ (2020):
+forest, savanna, shrubland, grassland, desert, marine intertidal, artificial
+terrestrial, marine neritic/oceanic, wetlands and coastal/artificial aquatic,
+and rocky areas/caves.
+% CHECK: describe how the per-species fractions were computed (eBird-weighted, data/raw/PHA_Jung_lvl1_fraction_v0.csv)
+Fractions are renormalised to sum to one,
+\begin{equation}
+  \mathbf{y}_i \in \Delta^{C-1}, \qquad y_{ic} \ge 0,\quad \sum_{c=1}^{C} y_{ic} = 1,
+\end{equation}
+and the binary support (habitat used at all) is $s_{ic} = \mathbb{1}[y_{ic} > 0]$.
+% src/datasets/folds.py: load_fold
+
+Images are split into three folds at the family level: no family appears in both
+the training and validation split of a fold, and each image is in exactly one
+validation split. One model is trained per fold.
+% data/cross/cross_version_1_FAM, checked by folds.check_partition
+% CHECK: insert final image/species/family counts per fold (CSV rows are filtered to images present on disk)
+
+\subsection{Bags of crops}
+
+The model sees a specimen as a bag of $N = 16$ square crops taken from the
+segmented (background-removed) image: $8$ crops of side $P = 128$ px, upsampled
+to $224$ px with bicubic interpolation, and $8$ crops of side $P = 224$ px.
+Crop positions are drawn from a precomputed table of admissible top-left
+corners per specimen and crop size.
+% CHECK: state the admissibility criterion of the .cand_{128,224} tables (built outside this repo)
+To spread crops over the plumage, the admissible positions are grouped into grid
+cells of side $P/2$; cells are visited in random order and one position is drawn
+uniformly in each, so that crops of a given size start at least $P/2$ apart.
+When a specimen has fewer cells than crops, the remaining positions are drawn
+uniformly among all admissible positions.
+% src/sampling.py
+
+Every bag goes through the same fixed preprocessing chain:
+(i) a median filter ($15 \times 15$) applied to the image before cropping;
+(ii) a vertical flip with probability $0.5$;
+(iii) cropping and resizing;
+(iv) per-channel ImageNet normalisation.
+Ablations (below) are inserted at fixed points of this chain
+(Table~\ref{tab:ablations}).
+% src/chain.py: build_bag, MEDIAN_BLUR_K = 15
+
+\subsection{Online ablations}
+
+During training, each bag is assigned a \emph{condition}: a set
+$\mathcal{A} \subseteq \{A_1,\dots,A_7\}$ of image manipulations, drawn anew for
+every image at every epoch. The number of ablations is drawn first,
+\begin{equation}
+  K \sim \mathrm{Categorical}\big(p_0, p_1, p_2, p_3\big) = (0.20,\ 0.40,\ 0.30,\ 0.10),
+\end{equation}
+then $\mathcal{A}$ is drawn uniformly among the admissible sets of size $K$.
+A set is admissible if it contains at most one of the four colour ablations
+$\{A_1, A_2, A_6, A_7\}$, which act on the same CIELAB channels and would
+otherwise overwrite one another. This gives $1 + 7 + 15 + 13 = 36$ admissible
+conditions. The marginal probability that a given ablation is active in a bag
+is $0.140$ for each colour ablation and $0.246$ for each of $A_3$, $A_4$, $A_5$;
+the unaltered reference condition ($\mathcal{A} = \varnothing$) is seen in
+$20\%$ of bags.
+% src/ablations/combinations.py: K_PROBABILITIES, marginal_inclusion_probabilities
+
+All random draws for a bag (condition, ablation parameters, crop positions,
+flip) come from a generator seeded by a hash of
+(run seed, epoch, image index, image name), so training is reproducible
+regardless of data-loader scheduling.
+% src/rng.py, src/datasets/bag_dataset.py
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{@{}l >{\raggedright\arraybackslash}p{5.6cm} l >{\raggedright\arraybackslash}p{5.0cm}@{}}
+\toprule
+Code & Manipulation & Level & Parameters (drawn per) \\
+\midrule
+$A_1$ & Achromatic: $a^* = b^* = 0$, $L^*$ kept & image & -- \\
+$A_2$ & $L^*$ matched to the population mean, s.d.\ and histogram; $a^*, b^*$ kept & image & -- \\
+$A_3$ & Random permutation of $h \times h$ blocks & crop & $h \in \{1,2,4,7,8,14,16,28,32,56\}$ (crop) \\
+$A_4$ & Directional box blur & image & $\theta \in \{0^\circ, 90^\circ\}$, $\ell \in [17, 101]$ (bag) \\
+$A_5$ & Amplitude-spectrum slope set to a reference & crop & $\alpha^\star = \bar\alpha_P + \mathcal{U}(-0.1, 0.1)$ (crop) \\
+$A_6$ & Chroma of one colour category removed, $L^*$ kept & image & category present on specimen (bag) \\
+$A_7$ & Isoluminant: $L^* = 50$, $a^*, b^*$ kept & image & -- \\
+\bottomrule
+\end{tabular}
+\caption{Ablations drawn online during training. CIELAB conversions use the
+D65 white point; colour ablations act on the foreground only.}
+\label{tab:ablations}
+\end{table}
+
+\paragraph{Colour ablations.}
+With $(L^*, a^*, b^*)$ the CIELAB coordinates of a foreground pixel,
+$A_1$ maps it to $(L^*, 0, 0)$ and $A_7$ to $(50, a^*, b^*)$, followed by
+conversion back to sRGB with gamut clipping.
+$A_2$ standardises lightness across the dataset in the manner of the SHINE
+toolbox (Willenbockel et al., 2010): each specimen's $L^*$ is first rescaled to
+the population mean and standard deviation, then exactly histogram-matched to a
+population target histogram (each specimen weighted equally), leaving $a^*$ and
+$b^*$ unchanged.
+% CHECK: the evaluated runs used the cluster A2 cache, which is greyscale (memory: cluster-dataset-differs). Align this sentence with that version.
+$A_6$ classifies every foreground pixel into the 12 avian colour categories of
+Delhey et al.\ (2023), via the CN11 colour names of van de Weijer et al.\ (2009);
+one of the chromatic categories present on the specimen is drawn uniformly and
+its pixels are set to $(L^*, 0, 0)$.
+% src/ablations/a1_*.py, a2_*.py, a6_*.py, a7_*.py; A1, A2, A7 and the A6 label maps are precomputed
+
+\paragraph{Spatial ablations.}
+$A_3$ splits a $224$-px crop into $(224/h)^2$ blocks of side $h$ and shuffles
+them with a uniform random permutation, preserving the colour histogram.
+$A_4$ convolves the image with a $1 \times \ell$ ($\theta = 0^\circ$) or
+$\ell \times 1$ ($\theta = 90^\circ$) box kernel, with $\ell$ drawn
+log-uniformly on $[17, 101]$ and rounded to an odd integer; it is applied
+before cropping so that the blur sees real neighbourhoods.
+$A_5$ regrades the amplitude spectrum of each crop. Let $\hat g(\mathbf{k})$ be
+the 2-D Fourier transform of the green channel and $\bar A(r)$ its radially
+averaged amplitude at integer radius $r = \lfloor \lVert\mathbf{k}\rVert \rceil$.
+The target profile is the power law
+\begin{equation}
+  A^\star(r) = \bar A(r_0)\,\left(\frac{r}{r_0}\right)^{-\alpha^\star}, \qquad r_0 = 2,
+\end{equation}
+and every channel is multiplied in Fourier space by the real gain
+$G(\mathbf{k}) = A^\star(r) / \bar A(r)$, with $G = 1$ at the DC term. Phases
+and mean brightness are unchanged. The target slope $\alpha^\star$ is centred on
+the mean slope measured on reference crops of the same source size
+($\bar\alpha_{224} = 1.49$, $\bar\alpha_{128} = 2.19$, fitted by least squares in
+log--log space over $r \in [2, 9]$).
+% src/ablations/a3_*.py, a4_*.py, a5_*.py
+
+\paragraph{Sham control.}
+For each fold we also train a sham model with the identical pipeline, seed and
+hyperparameters, except that every bag is in the reference condition
+($\mathcal{A} = \varnothing$). The median filter and flip are kept.
+% configs/train_sham_fold*.yaml
+
+\subsection{Model}
+
+\paragraph{Backbone.}
+Each crop $x_{ij}$ is embedded by a DINOv3 ViT-S/16 (12 blocks, width
+$d = 384$; Siméoni et al., 2025); we use its normalised class token,
+$\mathbf{h}_{ij} = f_\theta(x_{ij}) \in \mathbb{R}^{d}$.
+The pretrained weights $W_0$ are frozen and adapted with LoRA (Hu et al., 2022)
+on the attention input ($\mathrm{qkv}$) and output ($\mathrm{proj}$) projections
+of every block:
+\begin{equation}
+  W = W_0 + \frac{\alpha}{r}\, B A, \qquad A \in \mathbb{R}^{r \times d_\text{in}},\ B \in \mathbb{R}^{d_\text{out} \times r},
+\end{equation}
+with rank $r = 8$, $\alpha = 18$ and dropout $0.05$ on the LoRA input.
+% configs/model.yaml, src/model/backbone.py
+
+\paragraph{Gated attention pooling.}
+The $N$ crop embeddings of a bag are pooled with the gated attention of
+Ilse et al.\ (2018):
+\begin{align}
+  e_{ij} &= \mathbf{w}^\top \big( \tanh(\mathbf{V}\mathbf{h}_{ij} + \mathbf{b}_V) \odot \sigma(\mathbf{U}\mathbf{h}_{ij} + \mathbf{b}_U) \big) + b_w, \\
+  a_{ij} &= \frac{\exp e_{ij}}{\sum_{k=1}^{N} \exp e_{ik}}, \qquad
+  \mathbf{z}_i = \sum_{j=1}^{N} a_{ij}\, \mathbf{h}_{ij},
+\end{align}
+with $\mathbf{V}, \mathbf{U} \in \mathbb{R}^{96 \times 384}$ ($d/4$ hidden units).
+% src/model/mil.py
+
+\paragraph{Heads.}
+Two heads read the bag embedding, each a two-layer MLP
+($384 \to 192$, GELU, dropout $0.1$, $192 \to C$):
+a regression head giving the predicted habitat distribution
+$\hat{\mathbf{p}}_i = \mathrm{softmax}(\mathbf{r}_i)$, and a classification head
+giving per-habitat presence probabilities $\hat q_{ic} = \sigma(u_{ic})$.
+% src/model/heads.py
+
+\subsection{Loss}
+
+The regression head is trained with the Kullback--Leibler divergence from the
+target distribution, and the classification head with a class-weighted binary
+cross-entropy on the support:
+\begin{align}
+  \mathcal{L}_\text{KL} &= \frac{1}{|\mathcal{B}|} \sum_{i \in \mathcal{B}} \sum_{c=1}^{C} y_{ic} \big( \log y_{ic} - \log \hat p_{ic} \big), \\
+  \mathcal{L}_\text{BCE} &= \frac{1}{|\mathcal{B}|\,C} \sum_{i \in \mathcal{B}} \sum_{c=1}^{C} w_c \Big[ -s_{ic} \log \hat q_{ic} - (1 - s_{ic}) \log (1 - \hat q_{ic}) \Big],
+\end{align}
+with $0 \log 0 = 0$. The class weights are inverse support frequencies on the
+training split of the fold, normalised to mean one:
+\begin{equation}
+  f_c = \frac{1}{n} \sum_{i=1}^{n} s_{ic}, \qquad
+  w_c = \frac{1/f_c}{\frac{1}{C} \sum_{c'} 1/f_{c'}}.
+\end{equation}
+The total loss is
+$\mathcal{L} = \lambda_\text{KL}\, \mathcal{L}_\text{KL} + \lambda_\text{BCE}\, \mathcal{L}_\text{BCE}$,
+with $\lambda_\text{KL} + \lambda_\text{BCE} = 1$.
+% src/model/losses.py, src/datasets/folds.py: bce_class_weights
+
+\paragraph{Adaptive loss weights.}
+The weights start at $0.5/0.5$ and are updated once per epoch so that the term
+whose loss is decreasing more slowly receives more weight, in the spirit of
+dynamic weight averaging (Liu et al., 2019). Let $\ell_k^{(e)}$ be the mean of
+term $k \in \{\text{KL}, \text{BCE}\}$ over epoch $e$. We track an exponential
+moving average and its relative change over $\Delta = 5$ epochs,
+\begin{equation}
+  m_k^{(e)} = \beta\, m_k^{(e-1)} + (1 - \beta)\, \ell_k^{(e)}, \quad m_k^{(1)} = \ell_k^{(1)}, \qquad
+  \rho_k^{(e)} = \frac{m_k^{(e)}}{m_k^{(e-\Delta)}},
+\end{equation}
+with $\beta = 0.9$, and set the weights for epoch $e + 1$ to
+\begin{equation}
+  \lambda_\text{KL}^{(e+1)} = \mathrm{clip}\!\left( \sigma\!\left( \frac{\rho_\text{KL}^{(e)} - \rho_\text{BCE}^{(e)}}{T} \right),\ 0.2,\ 0.8 \right),
+  \qquad \lambda_\text{BCE}^{(e+1)} = 1 - \lambda_\text{KL}^{(e+1)},
+\end{equation}
+with temperature $T = 0.1$ (the sigmoid is the two-term softmax of $\rho_k / T$).
+Weights stay at $0.5/0.5$ until $\Delta + 1$ epochs of history are available,
+i.e.\ for epochs $1$--$6$.
+% src/training/loss_balancing.py, configs/optim.yaml
+
+\subsection{Optimisation}
+
+Only the LoRA matrices, the attention pooling and the heads are trained. We use
+AdamW (Loshchilov \& Hutter, 2019) with learning rate $\eta_0 = 10^{-4}$ and
+decoupled weight decay $0.01$ on weight matrices; biases and all attention-pool
+parameters are not decayed (decaying the pool drove the attention towards the
+uniform $1/N$). The learning rate follows a cosine schedule over
+$E_\text{max} = 100$ epochs, updated per epoch,
+\begin{equation}
+  \eta_e = \frac{\eta_0}{2} \left( 1 + \cos \frac{\pi (e - 1)}{E_\text{max}} \right),
+\end{equation}
+whether or not training stops early. An epoch is one pass over the training
+images, each forming one bag with a freshly drawn condition. Each optimiser step
+uses $128$ bags ($2048$ crops), accumulated over $8$ micro-batches of $16$ bags;
+forward passes run in bfloat16 mixed precision.
+% src/training/run.py, configs/optim.yaml
+
+\paragraph{Stopping and model selection.}
+Selection uses only the training loss. At each epoch we compute the training
+loss with fixed weights,
+$\bar{\mathcal{L}}^{(e)} = 0.5\, \ell_\text{KL}^{(e)} + 0.5\, \ell_\text{BCE}^{(e)}$,
+so that it is not affected by the adaptive reweighting, and average it over the
+last $5$ epochs. The checkpoint with the lowest smoothed value is kept, and
+training stops after $20$ epochs without improvement or at epoch $100$. The loss
+on reference-condition bags of the validation families is logged for monitoring
+but is never used for selection or stopping.
+% src/training/run.py: fit
+
+All runs (three folds, main and sham) use the same seed. For each run we store
+the resolved configuration, the code commit, library versions and the class
+weights.
+% seed 20260911, configs/train_*.yaml

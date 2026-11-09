@@ -20,9 +20,9 @@ GROUPS = {"Forest": [0], "Savanna/Shrub/Artificial": [1, 2, 6], "Open/arid": [3,
 GN = list(GROUPS)
 PAIRS = [(i, j) for i in range(len(GN)) for j in range(i + 1, len(GN))]
 CONDS = ["reference", "A3_h1_r1", "A3_h1_r2", "A3_h1_r3"]
-# "crops" = the 16 eval crops (fair comparison with A3_h1); "whole" = whole bird
+# "crops" = the 16 eval crops (fair comparison with A3_h1); "crops_A2" = same crops under A2; "whole" = whole bird
 FEAT = sys.argv[1] if len(sys.argv) > 1 else "crops"
-CHUNKS = {"crops": "hist_crop_chunks", "whole": "hist_chunks"}[FEAT]
+CHUNKS = {"crops": "hist_crop_chunks", "crops_A2": "hist_crop_chunks_A2", "whole": "hist_chunks"}[FEAT]
 
 # ── Histogram features ───────────────────────────────────────────────────────
 stems = np.load(f"{SP}/hist_stems.npy", allow_pickle=True)

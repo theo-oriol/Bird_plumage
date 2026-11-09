@@ -1,4 +1,4 @@
-# Optimisation hyperparameters, protocole §1 "Optimisation" table.
+# Optimisation hyperparameters, protocol §1 "Optimisation" table.
 epochs_max: 100
 early_stop_patience: 20       # on the fixed 0.5/0.5 KL/BCE train loss, never validation
 early_stop_smoothing: 5       # epochs averaged into the smoothed loss before comparing
@@ -7,7 +7,7 @@ weight_decay: 0.01
 learning_rate: 1.0e-4
 scheduler: cosine_annealing    # over epochs_max, even if early stop ends the run sooner
 batch_size: 128                # bags per optimiser step (128 x 16 = 2048 crops)
-n_crops_per_size: 8             # -> 16 crops per sac (8x128 + 8x224)
+n_crops_per_size: 8             # -> 16 crops per bag (8x128 + 8x224)
 num_workers: 8   # more workers ran out of RAM (~400 MB each); 8 already outpace the GPU
 
 # Bags per forward pass (gradients accumulate up to batch_size); 16 = near-peak speed, OOM at 20

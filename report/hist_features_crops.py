@@ -17,7 +17,9 @@ from hist_features import _LUT, Q, view_of  # noqa: E402
 SP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 os.makedirs(SP, exist_ok=True)
 DS = DATASET_DIR
-OUT = f"{SP}/hist_crop_chunks"
+# argv[1]: evaluation condition of the crops (default reference = clean images), e.g. A2
+COND = sys.argv[1] if len(sys.argv) > 1 else "reference"
+OUT = f"{SP}/hist_crop_chunks" + ("" if COND == "reference" else f"_{COND}")
 CHUNK = 2000
 
 
@@ -28,7 +30,8 @@ def dirs(view):
 
 
 def feats(stem):
-    crops, _ = chain.build_bag(*dirs(view_of(stem)), stem, Condition(), derive_rng("eval-condition", stem, "reference"),
+    cond = Condition() if COND == "reference" else Condition(active=frozenset({COND}))
+    crops, _ = chain.build_bag(*dirs(view_of(stem)), stem, cond, derive_rng("eval-condition", stem, COND),
                                positions_rng=derive_rng("eval-geometry", stem))
     px = crops[:, ::2, ::2].reshape(-1, 3) >> 2
     lab = _LUT[(px[:, 0].astype(np.int32) << 12) | (px[:, 1].astype(np.int32) << 6) | px[:, 2]]

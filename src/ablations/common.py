@@ -16,7 +16,7 @@ INSERTION_LEVEL = {
     "A3": "crop",   # step 7, last spatial operation
     "A4": "image",  # step 4, before cropping (needs real neighbourhood)
     "A5": "crop",   # step 8, last intensity operation
-    "A6": "image",  # step 1 — the only CIELAB-exclusive ablation still computed online (category drawn per sac)
+    "A6": "image",  # step 1 — the only CIELAB-exclusive ablation still computed online (category drawn per bag)
     "A7": "image",  # step 0 — deterministic given the specimen, cached, replaces the source read
 }
 
@@ -25,9 +25,9 @@ DRAWN_PER = {
     "A1": None,
     "A2": None,
     "A3": "crop",
-    "A4": "sac",
+    "A4": "bag",
     "A5": "crop",
-    "A6": "sac",
+    "A6": "bag",
     "A7": None,
 }
 
@@ -47,7 +47,7 @@ class Condition:
     def __str__(self) -> str:
         return "reference" if not self.active else "+".join(sorted(self.active))
 
-    # The active CIELAB-exclusive ablation, if any (@property : c.cielab_member sans parenthèses)
+    # The active CIELAB-exclusive ablation, if any (@property: c.cielab_member without parentheses)
     @property
     def cielab_member(self) -> Optional[str]:
         hit = self.active & CIELAB_EXCLUSIVE_GROUP

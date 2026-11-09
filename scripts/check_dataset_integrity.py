@@ -22,8 +22,8 @@ def main() -> None:
     # ── Run the checks (AssertionError on the first violation) ───────────────
     report = folds.check_partition(paths_cfg)
     print("all partition/family-leak checks passed\n")
-    print(f"valid sizes:    {report['valid_sizes']}  (protocole: [12630, 18200, 10157])")
-    print(f"valid families: {report['valid_families']}  (protocole: [83, 77, 80])")
+    print(f"valid sizes:    {report['valid_sizes']}  (protocol: [12630, 18200, 10157])")
+    print(f"valid families: {report['valid_families']}  (protocol: [83, 77, 80])")
     print(f"train sizes:    {report['train_sizes']}")
 
 

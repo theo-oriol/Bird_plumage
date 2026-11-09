@@ -50,7 +50,7 @@ class BagDataset(Dataset):
     def __getitem__(self, index: int) -> Dict[str, object]:
         stem = self.stems[index]
         dirs = self.view_dirs[self.views[index]]
-        # Crée un random generator
+        # Per-bag random generator
         rng = derive_rng(self.run_seed, self.epoch, index, stem)
 
         condition = Condition() if self.sham else draw_condition(rng, enabled_codes=self.enabled_codes)

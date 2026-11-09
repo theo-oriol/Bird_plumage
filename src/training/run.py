@@ -29,7 +29,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 # ── Trainer ──────────────────────────────────────────────────────────────────
 class Trainer:
     def __init__(self, cfg: Dict[str, Any], config_path: str):
-        # Crée les dossiers du modèle 
+        # Create the run folders
         self.cfg = cfg
         self.run_dir = Path(cfg["runs_dir"]) / cfg["run_name"]
         self.run_dir.mkdir(parents=True, exist_ok=True)
@@ -38,19 +38,19 @@ class Trainer:
         seed_everything(cfg["seed"])
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        # Copie la config
+        # Save the resolved config
         save_resolved_config(cfg, self.run_dir / "config.yaml")
-        # Crée un manisfest avec des infos config et des méta info sur l'env
+        # Manifest with config and environment metadata
         manifest = build_manifest(cfg, config_path, PROJECT_ROOT)
 
-        # Load la liste des fichiers et les labels 
+        # Load the file list and labels
         train_df = folds.load_fold(cfg, cfg["fold"], "train")
-        # Calcule la pondération pour la loss en prenant l'inverse de la fréquence d'apparition
+        # BCE class weights: inverse of each habitat's frequency
         class_weights = torch.tensor(folds.bce_class_weights(train_df), dtype=torch.float32)
         manifest["train_size"] = len(train_df)
         manifest["bce_class_weights"] = class_weights.tolist()
 
-        # Crée les crop et applique les ablations. C'est le cerveau du dataloader
+        # Builds the crops and applies the ablations: the core of the data loader
         self.dataset = BagDataset(
             train_df,
             cfg=cfg,
@@ -88,7 +88,7 @@ class Trainer:
             pin_memory=True,
         )
 
-        # Save le manifest (train + valid sizes both known now)
+        # Save the manifest (train + valid sizes both known now)
         write_manifest(manifest, self.run_dir / "manifest.json")
 
         self.model = BagModel(cfg).to(self.device)
@@ -140,7 +140,7 @@ class Trainer:
         n_micro_batches = 0
 
         self.optimizer.zero_grad(set_to_none=True)
-        progress = tqdm(self.loader, desc=f"epoch {epoch}", unit="sac", leave=False)
+        progress = tqdm(self.loader, desc=f"epoch {epoch}", unit="bag", leave=False)
         for step, batch in enumerate(progress):
             crops = batch["crops"].to(self.device, non_blocking=True)
             habitat = batch["habitat"].to(self.device, non_blocking=True)
@@ -176,7 +176,7 @@ class Trainer:
         total_kl = total_bce = 0.0
         n_micro_batches = 0
         with torch.no_grad():
-            progress = tqdm(self.valid_loader, desc=f"epoch {epoch} (valid)", unit="sac", leave=False)
+            progress = tqdm(self.valid_loader, desc=f"epoch {epoch} (valid)", unit="bag", leave=False)
             for batch in progress:
                 crops = batch["crops"].to(self.device, non_blocking=True)
                 habitat = batch["habitat"].to(self.device, non_blocking=True)
