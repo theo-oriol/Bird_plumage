@@ -25,19 +25,17 @@ def _parse_candidates(payload: np.ndarray) -> dict:
     n = int(payload[1])
     valid_ys = payload[2 : 2 + n]
     valid_xs = payload[2 + n : 2 + 2 * n]
-    cell_id = payload[2 + 2 * n : 2 + 3 * n]
-    unique_cells = np.unique(cell_id)
-    in_cell = {int(c): np.where(cell_id == c)[0] for c in unique_cells}
+    # The stored P/2 grid-cell ids (payload[2+2n:]) are ignored: strips along the body replace them
     return {
         "valid_ys": valid_ys,
         "valid_xs": valid_xs,
-        "unique_cells": unique_cells,
-        "in_cell": in_cell,
+        "x_order": np.argsort(valid_xs, kind="stable"),
     }
 
 
 # ── Sampling ─────────────────────────────────────────────────────────────────
-# n_positions top-left corners, one grid cell at a time so draws stay >= P/2 apart
+# One top-left corner per strip along the body: admissible corners sorted by x and cut into
+# n_positions strips holding equal shares of them, so every bag covers head to tail
 def sample_positions(candidates: dict, n_positions: int, rng: np.random.Generator) -> List[Tuple[int, int]]:
     if candidates.get("edge_case"):
         return [(0, 0)] * n_positions
@@ -46,18 +44,16 @@ def sample_positions(candidates: dict, n_positions: int, rng: np.random.Generato
 
     valid_ys = candidates["valid_ys"]
     valid_xs = candidates["valid_xs"]
-    cells = candidates["unique_cells"].copy()
-    rng.shuffle(cells)
+    strips = np.array_split(candidates["x_order"], n_positions)
 
     positions: List[Tuple[int, int]] = []
-    for cell in cells:
-        if len(positions) >= n_positions:
-            break
-        choices = candidates["in_cell"][int(cell)]
-        chosen = choices[rng.integers(len(choices))]
+    for strip in strips:
+        # Fewer admissible corners than strips: empty strips are filled below
+        if len(strip) == 0:
+            continue
+        chosen = strip[rng.integers(len(strip))]
         positions.append((int(valid_ys[chosen]), int(valid_xs[chosen])))
 
-    # More crops than P/2 cells (small specimens): uniform draws for the rest
     while len(positions) < n_positions:
         idx = rng.integers(len(valid_ys))
         positions.append((int(valid_ys[idx]), int(valid_xs[idx])))

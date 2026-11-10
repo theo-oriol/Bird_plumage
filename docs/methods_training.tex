@@ -1,141 +1,347 @@
 % ── Methods: model and training ──────────────────────────────────────────────
-% Fragment to \input{} into the paper. Needs amsmath, amssymb, booktabs, array.
-% Every value below is read from configs/*.yaml and src/ (see the % refs).
+% Fragment to \input{} into the paper. Needs amsmath, amssymb, booktabs, array, graphicx.
+% Values come from configs/*.yaml and src/; rationale from protocole_ablations_uniques_v5.
+% Figures: scripts/fig_methods.py -> docs/figures/{crop_system,ablations}.pdf
 % Lines marked CHECK need a value or a decision that is not in this repository.
 
 \subsection{Habitat targets}
 
-Each specimen image $i$ (one of three views: back, belly, side) inherits the
-habitat profile of its species, given as the fraction of use of $C=10$ habitat
-classes derived from the IUCN level-1 habitat map of Jung et al.\ (2020):
-forest, savanna, shrubland, grassland, desert, marine intertidal, artificial
-terrestrial, marine neritic/oceanic, wetlands and coastal/artificial aquatic,
-and rocky areas/caves.
-% CHECK: describe how the per-species fractions were computed (eBird-weighted, data/raw/PHA_Jung_lvl1_fraction_v0.csv)
-Fractions are renormalised to sum to one,
+Each specimen image $i$ inherits the habitat profile of its species: the
+fraction of use of $C = 10$ habitat classes derived from the IUCN level-1
+habitat map of Jung et al.\ (2020) (forest, savanna, shrubland, grassland,
+desert, marine intertidal, artificial terrestrial, marine neritic/oceanic,
+wetlands and coastal/artificial aquatic, rocky areas/caves).
+% CHECK: describe how the per-species fractions were computed (data/raw/PHA_Jung_lvl1_fraction_v0.csv)
+Fractions are renormalised to sum to one, so the target is a probability
+vector
 \begin{equation}
-  \mathbf{y}_i \in \Delta^{C-1}, \qquad y_{ic} \ge 0,\quad \sum_{c=1}^{C} y_{ic} = 1,
+  \mathbf{y}_i \in \Delta^{C-1}, \qquad y_{ic} \ge 0, \qquad \sum_{c=1}^{C} y_{ic} = 1.
 \end{equation}
-and the binary support (habitat used at all) is $s_{ic} = \mathbb{1}[y_{ic} > 0]$.
+The binary support records whether a habitat is used at all: $s_{ic} = 1$ if
+$y_{ic} > 0$ and $s_{ic} = 0$ otherwise.
 % src/datasets/folds.py: load_fold
 
-Images are split into three folds at the family level: no family appears in both
-the training and validation split of a fold, and each image is in exactly one
-validation split. One model is trained per fold.
+Images are split into three folds at the family level: no family appears in
+both the training and the validation split of a fold, and each image is in
+exactly one validation split. One model is trained per fold.
 % data/cross/cross_version_1_FAM, checked by folds.check_partition
-% CHECK: insert final image/species/family counts per fold (CSV rows are filtered to images present on disk)
+% CHECK: final image/species/family counts per fold (CSV rows are filtered to images present on disk)
 
-\subsection{Bags of crops}
+\subsection{From a specimen to a bag of crops}
 
-The model sees a specimen as a bag of $N = 16$ square crops taken from the
-segmented (background-removed) image: $8$ crops of side $P = 128$ px, upsampled
-to $224$ px with bicubic interpolation, and $8$ crops of side $P = 224$ px.
-Crop positions are drawn from a precomputed table of admissible top-left
-corners per specimen and crop size.
-% CHECK: state the admissibility criterion of the .cand_{128,224} tables (built outside this repo)
-To spread crops over the plumage, the admissible positions are grouped into grid
-cells of side $P/2$; cells are visited in random order and one position is drawn
-uniformly in each, so that crops of a given size start at least $P/2$ apart.
-When a specimen has fewer cells than crops, the remaining positions are drawn
-uniformly among all admissible positions.
-% src/sampling.py
+\paragraph{Canvas.}
+Specimens are photographed in a standard pose and segmented from the
+background. Each segmented image is rescaled, aspect preserved, so that its
+bounding box spans the full width of a $2024 \times 2024$ px canvas, with a
+black background; the plumage mask is the set of non-zero pixels. Because
+every bird is brought to the same width, a crop of fixed pixel size does not
+cover the same physical area on a small and on a large species: all pixel
+constants below (filter size, block sizes, blur lengths, spectral band) are
+conventions on this canvas, not biological scales.
 
-Every bag goes through the same fixed preprocessing chain:
-(i) a median filter ($15 \times 15$) applied to the image before cropping;
-(ii) a vertical flip with probability $0.5$;
-(iii) cropping and resizing;
-(iv) per-channel ImageNet normalisation.
-Ablations (below) are inserted at fixed points of this chain
-(Table~\ref{tab:ablations}).
-% src/chain.py: build_bag, MEDIAN_BLUR_K = 15
+\paragraph{Crops.}
+The model sees a specimen as a bag of $N = 16$ square crops
+(Fig.~\ref{fig:crops}): $8$ crops of side $P = 128$ px, upsampled to $224$ px
+with bicubic interpolation, and $8$ crops of side $P = 224$ px. The two sizes
+give the model the same plumage at two apparent scales. Crops are taken only
+where they lie entirely on the bird: for each specimen and crop size we
+enumerate, at a 1-px step, every top-left corner whose $P \times P$ window is
+fully inside the mask. So that every bag covers the whole body, admissible
+corners are sorted along the body axis ($x$) and cut into $8$ consecutive
+strips, each holding the same number of corners, and one corner is drawn
+uniformly within each strip. The strips have equal admissible area rather than
+equal length, so the broad back is not under-sampled relative to the narrow
+head and tail, and each of the $8$ crops of a size comes from a different
+eighth of the body. Crops are local by construction: none shows the outline of
+the bird, so body shape is not available to the model.
+% src/sampling.py; candidate tables .cand_{128,224}.zst
 
-\subsection{Online ablations}
 
-During training, each bag is assigned a \emph{condition}: a set
-$\mathcal{A} \subseteq \{A_1,\dots,A_7\}$ of image manipulations, drawn anew for
-every image at every epoch. The number of ablations is drawn first,
-\begin{equation}
-  K \sim \mathrm{Categorical}\big(p_0, p_1, p_2, p_3\big) = (0.20,\ 0.40,\ 0.30,\ 0.10),
-\end{equation}
-then $\mathcal{A}$ is drawn uniformly among the admissible sets of size $K$.
-A set is admissible if it contains at most one of the four colour ablations
-$\{A_1, A_2, A_6, A_7\}$, which act on the same CIELAB channels and would
-otherwise overwrite one another. This gives $1 + 7 + 15 + 13 = 36$ admissible
-conditions. The marginal probability that a given ablation is active in a bag
-is $0.140$ for each colour ablation and $0.246$ for each of $A_3$, $A_4$, $A_5$;
-the unaltered reference condition ($\mathcal{A} = \varnothing$) is seen in
-$20\%$ of bags.
-% src/ablations/combinations.py: K_PROBABILITIES, marginal_inclusion_probabilities
+\paragraph{Median filter.}
+Before cropping, the canvas is smoothed with a $15 \times 15$ median filter,
+applied per channel and identical for both crop sizes. Photographs carry
+pixel-scale structure that is not plumage, such as sensor noise and
+compression artefacts. Its amount depends on how and when a specimen was imaged rather than
+on the bird, so it could act as a shortcut correlated with collection or
+taxon. The median filter removes this grain while keeping the edges between
+plumage patches, which carry the pattern we want to study (a linear blur would
+soften both). It also fixes a common upper frequency limit for all specimens,
+a period of about 15~px, i.e.\ about $15$ cycles per $224$-px crop and, after
+upsampling, about $9$ cycles per $128$-px crop. The spectral ablation $A_5$ is
+measured below this limit, so it acts on plumage structure and not on
+acquisition noise.
+% src/chain.py: MEDIAN_BLUR_K = 15
 
-All random draws for a bag (condition, ablation parameters, crop positions,
-flip) come from a generator seeded by a hash of
-(run seed, epoch, image index, image name), so training is reproducible
-regardless of data-loader scheduling.
-% src/rng.py, src/datasets/bag_dataset.py
+\paragraph{Augmentation.}
+The only augmentation is a vertical flip with probability $0.5$, applied to
+the canvas. Specimens lie horizontally, so the flip swaps the two sides of the
+body while keeping head and tail in place, an image that remains anatomically
+plausible. Usual augmentations were excluded because each overlaps with a
+channel that an ablation is meant to remove (below): colour jitter overlaps
+with $A_1$, $A_2$ and $A_6$; random blur with $A_4$ and $A_5$; scale jitter
+changes the apparent scale that $A_5$ normalises; cutout overlaps with $A_3$.
+A model trained to be invariant to a channel would show no loss when that
+channel is ablated, whatever the channel carries. Finally, crops are
+normalised with the per-channel ImageNet mean and standard deviation, after
+all ablations.
+
+\subsection{Why ablations}
+
+The question is whether the colour pattern of the plumage, meaning the local
+arrangement of hues and contrasts, isolated from body shape, carries
+information about habitat, and through which visual channels. A model that
+predicts habitat well says that the information is there, not where it is.
+Ablations are the measuring instrument: each one removes one well-defined
+channel of the image (chromaticity, lightness, one named colour, spatial
+arrangement, orientation, distribution of energy across scales) and leaves the
+others intact. The drop in performance between the unaltered image and its
+ablated version can then be attributed to that channel. Colour is part of the
+object under study, which is why three ablations remove it ($A_1$, $A_2$, $A_6$),
+to measure what remains without it, and one keeps only it ($A_7$).
+
+Ablated images are out of distribution for a model that never saw them, and
+part of the loss under ablation would then reflect that shift rather than lost
+information. We therefore train with ablations, so that ablated inputs are part
+of the training distribution, and we keep a second model trained without any
+ablation (the sham, below) to measure that difference directly.
+
+\subsection{The seven ablations}
+
+Table~\ref{tab:ablations} summarises the seven ablations and
+Fig.~\ref{fig:ablations} shows them on one crop. Four act on colour and are
+defined in CIELAB on the plumage only, the background being
+left unchanged; three act on spatial structure.
 
 \begin{table}[t]
 \centering
 \small
-\begin{tabular}{@{}l >{\raggedright\arraybackslash}p{5.6cm} l >{\raggedright\arraybackslash}p{5.0cm}@{}}
+\begin{tabular}{@{}l >{\raggedright\arraybackslash}p{4.3cm} >{\raggedright\arraybackslash}p{3.6cm} l >{\raggedright\arraybackslash}p{3.0cm}@{}}
 \toprule
-Code & Manipulation & Level & Parameters (drawn per) \\
+Code & Operation & Channel removed & Level & Parameter (drawn per) \\
 \midrule
-$A_1$ & Achromatic: $a^* = b^* = 0$, $L^*$ kept & image & -- \\
-$A_2$ & $L^*$ matched to the population mean, s.d.\ and histogram; $a^*, b^*$ kept & image & -- \\
-$A_3$ & Random permutation of $h \times h$ blocks & crop & $h \in \{1,2,4,7,8,14,16,28,32,56\}$ (crop) \\
-$A_4$ & Directional box blur & image & $\theta \in \{0^\circ, 90^\circ\}$, $\ell \in [17, 101]$ (bag) \\
-$A_5$ & Amplitude-spectrum slope set to a reference & crop & $\alpha^\star = \bar\alpha_P + \mathcal{U}(-0.1, 0.1)$ (crop) \\
-$A_6$ & Chroma of one colour category removed, $L^*$ kept & image & category present on specimen (bag) \\
-$A_7$ & Isoluminant: $L^* = 50$, $a^*, b^*$ kept & image & -- \\
+$A_1$ & $(L^*, a^*, b^*) \mapsto (L^*, 0, 0)$ & chromaticity & image & -- \\
+$A_2$ & $A_1$, then $L^*$ matched to a population histogram & chromaticity and individual lightness level and contrast & image & -- \\
+$A_3$ & shuffle of $h \times h$ blocks & spatial arrangement above scale $h$ & crop & $h \in \{1, \dots, 56\}$ (crop) \\
+$A_4$ & 1-D box blur along or across the body & structure in one direction & image & $\theta$, $\ell$ (bag) \\
+$A_5$ & amplitude spectrum set to a reference power law & distribution of energy across scales & crop & $\alpha^\star$ (crop) \\
+$A_6$ & $(L^*, a^*, b^*) \mapsto (L^*, 0, 0)$ on one colour category & one named hue & image & category (bag) \\
+$A_7$ & $(L^*, a^*, b^*) \mapsto (50, a^*, b^*)$ & lightness & image & -- \\
 \bottomrule
 \end{tabular}
-\caption{Ablations drawn online during training. CIELAB conversions use the
-D65 white point; colour ablations act on the foreground only.}
+\caption{The seven ablations. ``Level'' is where the ablation enters the
+chain: on the whole specimen before cropping (image) or on each $224$-px crop.}
 \label{tab:ablations}
 \end{table}
 
-\paragraph{Colour ablations.}
-With $(L^*, a^*, b^*)$ the CIELAB coordinates of a foreground pixel,
-$A_1$ maps it to $(L^*, 0, 0)$ and $A_7$ to $(50, a^*, b^*)$, followed by
-conversion back to sRGB with gamut clipping.
-$A_2$ standardises lightness across the dataset in the manner of the SHINE
-toolbox (Willenbockel et al., 2010): each specimen's $L^*$ is first rescaled to
-the population mean and standard deviation, then exactly histogram-matched to a
-population target histogram (each specimen weighted equally), leaving $a^*$ and
-$b^*$ unchanged.
-% CHECK: the evaluated runs used the cluster A2 cache, which is greyscale (memory: cluster-dataset-differs). Align this sentence with that version.
-$A_6$ classifies every foreground pixel into the 12 avian colour categories of
-Delhey et al.\ (2023), via the CN11 colour names of van de Weijer et al.\ (2009);
-one of the chromatic categories present on the specimen is drawn uniformly and
-its pixels are set to $(L^*, 0, 0)$.
-% src/ablations/a1_*.py, a2_*.py, a6_*.py, a7_*.py; A1, A2, A7 and the A6 label maps are precomputed
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/ablations.pdf}
+  \caption{The ablations on one native 224~px crop of the specimen in
+  Fig.~\ref{fig:crops}, each produced by the training chain. Top: colour
+  ablations, applied to the whole specimen. Bottom: spatial ablations, $A_3$ at
+  two block sizes, $A_4$ along ($\theta = 0^\circ$) and across
+  ($\theta = 90^\circ$) the body at the longest kernel, and $A_5$. In this
+  figure the $A_2$ target is computed on 40 specimens instead of the full
+  dataset.}
+  \label{fig:ablations}
+\end{figure}
 
-\paragraph{Spatial ablations.}
-$A_3$ splits a $224$-px crop into $(224/h)^2$ blocks of side $h$ and shuffles
-them with a uniform random permutation, preserving the colour histogram.
-$A_4$ convolves the image with a $1 \times \ell$ ($\theta = 0^\circ$) or
-$\ell \times 1$ ($\theta = 90^\circ$) box kernel, with $\ell$ drawn
-log-uniformly on $[17, 101]$ and rounded to an odd integer; it is applied
-before cropping so that the blur sees real neighbourhoods.
-$A_5$ regrades the amplitude spectrum of each crop. Let $\hat g(\mathbf{k})$ be
-the 2-D Fourier transform of the green channel and $\bar A(r)$ its radially
-averaged amplitude at integer radius $r = \lfloor \lVert\mathbf{k}\rVert \rceil$.
-The target profile is the power law
+\paragraph{$A_1$: greyscale in CIELAB.}
+$A_1$ turns the plumage into a greyscale image defined in CIELAB, a colour space
+in which $L^*$ is perceived lightness and $(a^*, b^*)$ are the two chromatic
+axes (green--red and blue--yellow). Each plumage pixel is converted to CIELAB,
+its chromatic coordinates are set to zero,
+$(L^*, a^*, b^*) \mapsto (L^*, 0, 0)$, and it is converted back to RGB. Unlike
+a greyscale computed as a weighted sum of the RGB channels, this keeps the
+perceived lightness of every pixel exactly. $A_1$ measures what colour adds on
+top of lightness.
+
+\paragraph{$A_2$: achromatic with standardised lightness.}
+$A_2$ is $A_1$ followed by a standardisation of $L^*$ across specimens, in the
+manner of the SHINE toolbox (Willenbockel et al., 2010). Its aim is that the
+overall lightness and contrast of an individual stop being readable, so that
+only the arrangement of light and dark remains. Let $m_i$ and $\sigma_i$ be the
+mean and standard deviation of $L^*$ over the plumage of specimen $i$, and $M$
+and $S$ their averages over the dataset, each specimen counting once regardless
+of its size. Lightness is first rescaled,
+\begin{equation}
+  \tilde L^* = \mathrm{clip}_{[0, 100]}\!\left( (L^* - m_i)\, \frac{S}{\sigma_i} + M \right),
+\end{equation}
+and then exactly matched to a population histogram $h$, the average over
+specimens of the histograms of $\tilde L^*$ (256 levels on $[0, 100]$): $h$ is
+converted to integer counts for the specimen's number of pixels by the
+largest-remainder method, and the pixels, sorted by $\tilde L^*$ (ties broken at
+random), receive the target levels in order. Chromaticity is set to zero as in
+$A_1$. After $A_2$, all specimens share the same distribution of $L^*$, not only
+its first two moments; the standardisation is done on the whole bird, so a
+single crop keeps its own deviation from the target. Because the rescaling is
+monotone, $A_2$ is equivalent to a quantile transform of each specimen's
+lightness onto a common target.
+% src/ablations/a2_gray_standardized.py; precomputed offline in three passes
+% CHECK: report M and S measured on the training dataset
+
+\paragraph{$A_3$: block permutation.}
+A $224$-px crop is cut into $(224/h)^2$ square blocks of side $h$, which are
+shuffled by a uniform random permutation. $A_3$ destroys the spatial
+arrangement above the block scale (bands, bars, gradients, the relative
+position of patches) and keeps the content of each block, and therefore the
+colour histogram of the crop. The block side is drawn uniformly among the ten
+divisors of $224$ up to $56$, $h \in \{1, 2, 4, 7, 8, 14, 16, 28, 32, 56\}$, so
+that blocks tile the crop exactly: a partial block at the border would itself
+be a positional cue. The cap at $56$ px leaves at least $16$ blocks; $h = 1$ is a
+pixel-level permutation that keeps only the histogram. Blocks are square
+because blocks following the aspect ratio of the bird would carry body shape
+into the image. The permutation is applied to the crop and not to the whole
+image: permuting the canvas would move plumage between body regions and leave
+most crops inside a single block, intact.
+% src/ablations/a3_block_permutation.py; h and the permutation are drawn independently for each crop
+
+\paragraph{$A_4$: directional blur.}
+The canvas is convolved with a normalised 1-D box kernel of length $\ell$,
+horizontal ($1 \times \ell$, $\theta = 0^\circ$) or vertical ($\ell \times 1$,
+$\theta = 90^\circ$). Since specimens lie horizontally in a standard pose,
+$\theta = 0^\circ$ smooths along the body axis and $\theta = 90^\circ$ across
+it. $A_4$ removes structure in one direction and keeps it in the other, which
+tests whether the orientation of the pattern (bars across the body, streaks
+along it) carries information. The length is drawn log-uniformly on
+$[17, 101]$ px and rounded to an odd integer (median about $41$ px); the lower
+bound is just above the median filter size. $A_4$ is applied to the canvas
+before cropping so that the kernel, up to $101$ px long, averages real
+neighbouring plumage instead of padded borders.
+% src/ablations/a4_directional_blur.py
+
+\paragraph{$A_5$: spectral slope.}
+The amplitude spectrum of natural textures falls off roughly as a power of
+frequency, $A(f) \propto f^{-\alpha}$, and the slope $\alpha$ says whether a
+plumage is coarse-grained (steep) or fine-grained (shallow). $A_5$ sets this
+slope to a common reference while keeping the phase, and hence the position of
+edges. Let $\hat g(\mathbf{k})$ be the 2-D Fourier transform of the green
+channel of a crop and $\bar A(r)$ its radially averaged amplitude at integer
+radius $r = \lfloor \lVert\mathbf{k}\rVert \rceil$ (cycles per crop). The target
+profile is the power law
 \begin{equation}
   A^\star(r) = \bar A(r_0)\,\left(\frac{r}{r_0}\right)^{-\alpha^\star}, \qquad r_0 = 2,
 \end{equation}
-and every channel is multiplied in Fourier space by the real gain
-$G(\mathbf{k}) = A^\star(r) / \bar A(r)$, with $G = 1$ at the DC term. Phases
-and mean brightness are unchanged. The target slope $\alpha^\star$ is centred on
-the mean slope measured on reference crops of the same source size
-($\bar\alpha_{224} = 1.49$, $\bar\alpha_{128} = 2.19$, fitted by least squares in
-log--log space over $r \in [2, 9]$).
-% src/ablations/a3_*.py, a4_*.py, a5_*.py
+and each colour channel is multiplied in Fourier space by the real, positive
+gain $G(\mathbf{k}) = A^\star(r) / \bar A(r)$, with $G = 1$ at the DC term, so
+that phase and mean brightness are unchanged. The target slope is the
+population median for the crop size, measured by least squares in log--log
+space over $r \in [2, 9]$ on reference crops ($\bar\alpha_{224} = 1.49$,
+$\bar\alpha_{128} = 2.19$), plus a uniform jitter,
+$\alpha^\star = \bar\alpha_P + \mathcal{U}(-0.1, 0.1)$. The two sizes need two
+targets because they do not show the plumage at the same apparent scale. The
+band stops below the median filter cut-off so that the slope describes plumage
+and not the filter.
+% src/ablations/a5_spectral_slope.py
+
+\paragraph{$A_6$: removal of one colour.}
+Each plumage pixel is assigned to one of the $12$ avian colour categories of
+Delhey et al.\ (2023), eight chromatic (blue, purple, red, yellow, green,
+rufous, light brown, dark brown) and four achromatic (light grey, dark grey,
+black, white), from the CN11 colour names of van de Weijer et al.\ (2009)
+recalibrated locally in LCh. For each bag, one chromatic category present on
+the specimen is drawn uniformly, regardless of the area it covers, and its
+pixels are set to $(L^*, 0, 0)$ on the whole specimen before cropping, so the
+16 crops of a bag all lose the same colour: the patch keeps its lightness and its
+boundary and loses only its hue. Drawing categories uniformly rather than by
+area gives every named hue a chance to be measured instead of mostly the
+dominant one. $A_6$ removes one named hue where $A_1$ removes all of them; applied
+to all eight chromatic categories at once, it would be $A_1$.
+% src/ablations/a6_colour_removal.py; per-pixel labels precomputed offline
+
+\paragraph{$A_7$: isoluminant.}
+$A_7$ is the complement of $A_1$: lightness is fixed to $L^* = 50$ on the
+plumage and $(a^*, b^*)$ are kept, $(L^*, a^*, b^*) \mapsto (50, a^*, b^*)$,
+followed by conversion back to sRGB, the standard RGB colour space of the
+photographs and of the backbone's pretraining images. Not every
+$(L^*, a^*, b^*)$ triplet has an sRGB equivalent: at $L^* = 50$ the most
+saturated chromaticities fall outside the set of colours that sRGB can encode
+(its gamut). For those pixels each RGB channel is clipped to $[0, 1]$
+(gamut clipping), which slightly reduces their saturation. $A_1$ measures what
+colour adds to lightness; $A_7$ measures what lightness adds to colour, and
+whether the chromatic signal is usable on its own and not only necessary.
+% src/ablations/a7_chroma_only.py
+% CHECK: report the measured chroma retention of A7 (gamut clipping) on the dataset
+
+\begin{figure}[p]
+  \centering
+  \includegraphics[width=\linewidth,height=0.74\textheight,keepaspectratio]{figures/crop_system.pdf}
+  \caption{Building a bag of crops (\emph{Tangara florida}).
+  (a)~Specimen canvas after the median filter, with the 8 windows of 128~px
+  (orange) and the 8 windows of 224~px (blue) drawn for one bag.
+  (b)~Sampling for $P = 128$ (top) and $P = 224$ (bottom): coloured pixels are
+  the centres of all admissible windows (window entirely on the bird), split
+  into 8 strips along the body that hold equal numbers of admissible positions
+  (alternating shades, dotted boundaries); one window is drawn uniformly in
+  each strip (dots; the dashed square is one of these windows). Windows are drawn at
+  true scale.
+  (c)~The 16 crops given to the backbone in the reference condition, all at
+  $224 \times 224$~px; the coarser look of the 128~px crops (orange) comes from
+  their upsampling.
+  (d)~Four bags of the same specimen whose conditions were drawn by the online
+  sampler of Section~\ref{sec:online}, each with new positions; all 16 crops of a
+  bag share the condition, while the $A_3$ block size and the $A_5$ target slope
+  vary from crop to crop.}
+  \label{fig:crops}
+\end{figure}
+
+\paragraph{Order of operations.}
+Ablations enter a fixed chain at the point where they are well defined:
+(1)~the colour ablation, if any ($A_1$, $A_2$, $A_6$ or $A_7$), on the whole
+specimen; (2)~vertical flip; (3)~median filter; (4)~$A_4$, on the canvas;
+(5)~sampling of positions; (6)~cropping and resizing to $224$ px; (7)~$A_3$,
+the last spatial operation, so that no filter smooths across block borders;
+(8)~$A_5$, the last intensity operation, so that the slope is set on the image
+actually presented; (9)~ImageNet normalisation. The colour ablations precede
+the median filter, so the backbone sees the filtered greyscale image rather
+than a greyscale version of the filtered image.
+% src/chain.py: build_bag
+
+\subsection{Drawing ablations online}
+\label{sec:online}
+
+Rather than training one model per ablation, a single model per fold is
+trained on all of them at once. Every condition is then evaluated on the same
+weights, so differences between conditions cannot come from different
+optimisation runs, and the same images can be passed through every condition
+for paired comparisons.
+
+During training, each bag receives a condition: a set
+$\mathcal{A} \subseteq \{A_1, \dots, A_7\}$ of ablations, shared by its 16
+crops and drawn anew for every image at every epoch
+(Fig.~\ref{fig:crops}d). The number of ablations
+is drawn first,
+\begin{equation}
+  K \sim \mathrm{Categorical}(0.20,\ 0.40,\ 0.30,\ 0.10) \quad \text{over } K \in \{0, 1, 2, 3\},
+\end{equation}
+then $\mathcal{A}$ is drawn uniformly among the admissible sets of size $K$.
+A set is admissible if it contains at most one of the four colour ablations
+$\{A_1, A_2, A_6, A_7\}$, because any two of them either coincide or cancel:
+$A_2$ contains $A_1$; $A_6$ applied after $A_1$ has nothing left to remove;
+$A_1$ and $A_7$ together leave a uniform patch. Spatial ablations combine
+freely with each other and with a colour ablation. This gives
+$1 + 7 + 15 + 13 = 36$ admissible conditions. The probability that a given
+ablation is active in a bag is $0.140$ for each colour ablation and $0.246$ for
+each of $A_3$, $A_4$, $A_5$; on average a bag carries $1.3$ ablations, and $20\%$
+of bags are in the reference condition ($\mathcal{A} = \varnothing$).
+% src/ablations/combinations.py
+
+Parameters are drawn at the level where the ablation acts: once per bag for
+$A_4$ (one kernel for the canvas) and $A_6$ (one category, decided on the whole
+specimen), once per crop for $A_3$ (block side and permutation) and $A_5$
+(target slope); $A_1$, $A_2$ and $A_7$ have no parameter and are precomputed
+once per specimen.
+% src/ablations/common.py: DRAWN_PER
 
 \paragraph{Sham control.}
-For each fold we also train a sham model with the identical pipeline, seed and
-hyperparameters, except that every bag is in the reference condition
-($\mathcal{A} = \varnothing$). The median filter and flip are kept.
+For each fold we also train a sham model with the same pipeline, seed and
+hyperparameters, including the median filter and the flip, except that every
+bag is in the reference condition. Evaluated under the same conditions, it
+measures what an ablation removes from a model that has never seen it, while
+the main model measures what remains of that loss after training under
+ablations. The difference between the two is the adaptation itself, and the
+sham's reference performance tells what the ablation regime costs on intact
+images.
 % configs/train_sham_fold*.yaml
 
 \subsection{Model}
@@ -161,15 +367,32 @@ Ilse et al.\ (2018):
   a_{ij} &= \frac{\exp e_{ij}}{\sum_{k=1}^{N} \exp e_{ik}}, \qquad
   \mathbf{z}_i = \sum_{j=1}^{N} a_{ij}\, \mathbf{h}_{ij},
 \end{align}
-with $\mathbf{V}, \mathbf{U} \in \mathbb{R}^{96 \times 384}$ ($d/4$ hidden units).
+where $\mathbf{h}_{ij} \in \mathbb{R}^{384}$ is the embedding of crop $j$ of bag
+$i$; $\mathbf{V}, \mathbf{U} \in \mathbb{R}^{96 \times 384}$ are two learned
+projections to a hidden space of $d/4 = 96$ units, with biases
+$\mathbf{b}_V, \mathbf{b}_U \in \mathbb{R}^{96}$; $\mathbf{V}$ followed by
+$\tanh$ gives a feature in $[-1, 1]$, and $\mathbf{U}$ followed by the logistic
+sigmoid $\sigma$ gives a gate in $[0, 1]$ that scales it element-wise ($\odot$);
+$\mathbf{w} \in \mathbb{R}^{96}$ and $b_w \in \mathbb{R}$ map the gated feature
+to a scalar score $e_{ij}$. Scores are normalised over the crops of the bag by a
+softmax into weights $a_{ij}$ ($a_{ij} \ge 0$, $\sum_j a_{ij} = 1$), and the bag
+embedding $\mathbf{z}_i$ is the weighted mean of its crop embeddings. A single weight per crop is shared by all habitats, so the attention
+says which crops of a bag are informative, not which are informative for a
+given habitat.
 % src/model/mil.py
 
 \paragraph{Heads.}
 Two heads read the bag embedding, each a two-layer MLP
 ($384 \to 192$, GELU, dropout $0.1$, $192 \to C$):
-a regression head giving the predicted habitat distribution
-$\hat{\mathbf{p}}_i = \mathrm{softmax}(\mathbf{r}_i)$, and a classification head
-giving per-habitat presence probabilities $\hat q_{ic} = \sigma(u_{ic})$.
+a regression head with logits $\mathbf{r}_i \in \mathbb{R}^{C}$ and a
+classification head with logits $\mathbf{u}_i \in \mathbb{R}^{C}$. The regression
+head predicts the habitat distribution with a softmax, so that its outputs sum
+to one across habitats, and the classification head predicts the presence of
+each habitat independently with a sigmoid:
+\begin{equation}
+  \hat p_{ic} = \frac{\exp r_{ic}}{\sum_{c'=1}^{C} \exp r_{ic'}}, \qquad
+  \hat q_{ic} = \sigma(u_{ic}) = \frac{1}{1 + \exp(-u_{ic})}.
+\end{equation}
 % src/model/heads.py
 
 \subsection{Loss}
@@ -181,8 +404,10 @@ cross-entropy on the support:
   \mathcal{L}_\text{KL} &= \frac{1}{|\mathcal{B}|} \sum_{i \in \mathcal{B}} \sum_{c=1}^{C} y_{ic} \big( \log y_{ic} - \log \hat p_{ic} \big), \\
   \mathcal{L}_\text{BCE} &= \frac{1}{|\mathcal{B}|\,C} \sum_{i \in \mathcal{B}} \sum_{c=1}^{C} w_c \Big[ -s_{ic} \log \hat q_{ic} - (1 - s_{ic}) \log (1 - \hat q_{ic}) \Big],
 \end{align}
-with $0 \log 0 = 0$. The class weights are inverse support frequencies on the
-training split of the fold, normalised to mean one:
+with $0 \log 0 = 0$. The KL term is dominated by prevalent habitats, which carry
+most of the probability mass; the BCE term treats each habitat as a separate
+binary problem and gives gradient to rare ones. The class weights are inverse
+support frequencies on the training split of the fold, normalised to mean one:
 \begin{equation}
   f_c = \frac{1}{n} \sum_{i=1}^{n} s_{ic}, \qquad
   w_c = \frac{1/f_c}{\frac{1}{C} \sum_{c'} 1/f_{c'}}.
@@ -208,6 +433,12 @@ with $\beta = 0.9$, and set the weights for epoch $e + 1$ to
   \qquad \lambda_\text{BCE}^{(e+1)} = 1 - \lambda_\text{KL}^{(e+1)},
 \end{equation}
 with temperature $T = 0.1$ (the sigmoid is the two-term softmax of $\rho_k / T$).
+A term whose moving average decreases more slowly over the last $\Delta$
+epochs has a larger $\rho_k$ and receives more weight. The clip bounds each
+weight to $[0.2, 0.8]$: with a small temperature the sigmoid saturates quickly,
+and without the bound one term could be switched off almost entirely; the
+clip guarantees that both heads keep receiving at least a fifth of the
+gradient throughout training.
 Weights stay at $0.5/0.5$ until $\Delta + 1$ epochs of history are available,
 i.e.\ for epochs $1$--$6$.
 % src/training/loss_balancing.py, configs/optim.yaml
@@ -217,30 +448,14 @@ i.e.\ for epochs $1$--$6$.
 Only the LoRA matrices, the attention pooling and the heads are trained. We use
 AdamW (Loshchilov \& Hutter, 2019) with learning rate $\eta_0 = 10^{-4}$ and
 decoupled weight decay $0.01$ on weight matrices; biases and all attention-pool
-parameters are not decayed (decaying the pool drove the attention towards the
-uniform $1/N$). The learning rate follows a cosine schedule over
-$E_\text{max} = 100$ epochs, updated per epoch,
+parameters are not decayed, as decaying the pool drove the attention towards
+the uniform $1/N$. The learning rate follows a cosine schedule over
+$E = 100$ epochs, updated per epoch,
 \begin{equation}
-  \eta_e = \frac{\eta_0}{2} \left( 1 + \cos \frac{\pi (e - 1)}{E_\text{max}} \right),
+  \eta_e = \frac{\eta_0}{2} \left( 1 + \cos \frac{\pi (e - 1)}{E} \right).
 \end{equation}
-whether or not training stops early. An epoch is one pass over the training
-images, each forming one bag with a freshly drawn condition. Each optimiser step
-uses $128$ bags ($2048$ crops), accumulated over $8$ micro-batches of $16$ bags;
-forward passes run in bfloat16 mixed precision.
-% src/training/run.py, configs/optim.yaml
-
-\paragraph{Stopping and model selection.}
-Selection uses only the training loss. At each epoch we compute the training
-loss with fixed weights,
-$\bar{\mathcal{L}}^{(e)} = 0.5\, \ell_\text{KL}^{(e)} + 0.5\, \ell_\text{BCE}^{(e)}$,
-so that it is not affected by the adaptive reweighting, and average it over the
-last $5$ epochs. The checkpoint with the lowest smoothed value is kept, and
-training stops after $20$ epochs without improvement or at epoch $100$. The loss
-on reference-condition bags of the validation families is logged for monitoring
-but is never used for selection or stopping.
-% src/training/run.py: fit
-
-All runs (three folds, main and sham) use the same seed. For each run we store
-the resolved configuration, the code commit, library versions and the class
-weights.
-% seed 20260911, configs/train_*.yaml
+An epoch is one pass over the training images, each forming one bag with a
+freshly drawn condition. Each optimiser step uses $128$ bags ($2048$ crops), and
+forward passes run in bfloat16 mixed precision. All runs (three folds, main and
+sham) use the same seed.
+% src/training/run.py, configs/optim.yaml; seed 20260911
