@@ -46,13 +46,15 @@ with bicubic interpolation, and $8$ crops of side $P = 224$ px. The two sizes
 give the model the same plumage at two apparent scales. Crops are taken only
 where they lie entirely on the bird: for each specimen and crop size we
 enumerate, at a 1-px step, every top-left corner whose $P \times P$ window is
-fully inside the mask. So that every bag covers the whole body, admissible
-corners are sorted along the body axis ($x$) and cut into $8$ consecutive
-strips, each holding the same number of corners, and one corner is drawn
-uniformly within each strip. The strips have equal admissible area rather than
-equal length, so the broad back is not under-sampled relative to the narrow
-head and tail, and each of the $8$ crops of a size comes from a different
-eighth of the body. Crops are local by construction: none shows the outline of
+fully inside the mask. So that every bag covers the whole body, the range of
+admissible corners along the body axis ($x$) is cut into $8$ strips of equal
+length, and one corner is drawn uniformly within each strip. Each of the $8$
+crops of a size thus comes from a different eighth of the body. Because the
+strips have equal length rather than equal area, the narrow head and tail
+regions, which offer few admissible positions, receive one crop each like the
+broad back, instead of being sampled in proportion to their small area. A strip
+with no admissible corner (a gap in the admissible range) is replaced by a draw
+uniform over all admissible corners. Crops are local by construction: none shows the outline of
 the bird, so body shape is not available to the model.
 % src/sampling.py; candidate tables .cand_{128,224}.zst
 
@@ -271,8 +273,8 @@ whether the chromatic signal is usable on its own and not only necessary.
   (orange) and the 8 windows of 224~px (blue) drawn for one bag.
   (b)~Sampling for $P = 128$ (top) and $P = 224$ (bottom): coloured pixels are
   the centres of all admissible windows (window entirely on the bird), split
-  into 8 strips along the body that hold equal numbers of admissible positions
-  (alternating shades, dotted boundaries); one window is drawn uniformly in
+  into 8 strips of equal length along the body (alternating shades, dotted
+  boundaries); one window is drawn uniformly in
   each strip (dots; the dashed square is one of these windows). Windows are drawn at
   true scale.
   (c)~The 16 crops given to the backbone in the reference condition, all at

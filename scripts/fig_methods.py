@@ -107,7 +107,7 @@ def draw_admissible(ax, dirs: dict, stem: str, mask: np.ndarray, meta: dict, siz
     half = size // 2
     cand = sampling.load_candidates(dirs["src"], stem, size)
     ys, xs = cand["valid_ys"] + half, cand["valid_xs"] + half
-    strips = np.array_split(cand["x_order"], chain.N_CROPS_PER_SIZE)
+    strips = sampling.equal_length_strips(cand, chain.N_CROPS_PER_SIZE)
     tint = np.array(matplotlib.colors.to_rgb(COLOURS[size])) * 255
     shown = np.where(mask[..., None], 235, 255).astype(np.uint8).repeat(3, axis=-1)
     for i, strip in enumerate(strips):
@@ -115,7 +115,8 @@ def draw_admissible(ax, dirs: dict, stem: str, mask: np.ndarray, meta: dict, siz
         shown[ys[strip], xs[strip]] = (mix * tint + (1 - mix) * 255).astype(np.uint8)
     ax.imshow(shown[y_lo:y_hi], interpolation="nearest")
     for strip in strips[1:]:
-        ax.axvline(xs[strip[0]], color="0.35", lw=0.6, ls=":")
+        if len(strip):
+            ax.axvline(xs[strip[0]], color="0.35", lw=0.6, ls=":")
     drawn = [(y, x) for s, y, x in meta["positions"] if s == size]
     for y, x in drawn:
         ax.plot(x + half, y + half - y_lo, "o", ms=3.2, color=COLOURS[size], mec="white", mew=0.5)
@@ -192,7 +193,7 @@ def fig_crop_system(dirs: dict, stem: str, canvas: np.ndarray, out: Path, seed: 
         ax = fig.add_subplot(gs[r, :])
         draw_admissible(ax, dirs, stem, mask, meta, size, y_lo, y_hi)
         tag = "(b) " if size == 128 else ""
-        ax.set_title(f"{tag}P = {size}: admissible window centres in 8 strips of equal area, one window per strip (dots; one dashed)",
+        ax.set_title(f"{tag}P = {size}: admissible window centres in 8 strips of equal length, one window per strip (dots; one dashed)",
                      fontsize=8, loc="left")
 
     # (c) the 16 crops given to the backbone, reference condition
