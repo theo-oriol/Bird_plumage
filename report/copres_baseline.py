@@ -1,7 +1,9 @@
-import json, numpy as np, svlib
+import sys, json, numpy as np, svlib
+
+MODEL = sys.argv[1] if len(sys.argv) > 1 else "sham"  # output name: copres_baseline.json (sham) or copres_baseline_<model>.json
 
 # ── Load ─────────────────────────────────────────────────────────────────────
-d = svlib.load("sham")
+d = svlib.load(MODEL)
 H = np.stack(d.habitat.values).astype(float); P = np.stack(d.reg_prob.values).astype(np.float64)
 fams = np.array(sorted(d.family.unique())); fidx = np.searchsorted(fams, d.family.values)
 del d
@@ -12,7 +14,7 @@ CP = json.load(open(f"{svlib.SP}/copresence_check.json"))
 out = {}
 for a in range(10):
     for b in range(10):
-        if a == b or "auc" not in CP["sham"][f"{a},{b}"]:
+        if a == b or "auc" not in CP[MODEL][f"{a},{b}"]:
             continue
         m = H[:, a] > 0
         y = H[m, b] > 0
@@ -26,5 +28,5 @@ for a in range(10):
                                lo=float(np.nanpercentile(diff, 2.5)), hi=float(np.nanpercentile(diff, 97.5)))
 
 # ── Write ────────────────────────────────────────────────────────────────────
-json.dump(out, open(f"{svlib.SP}/copres_baseline.json", "w"))
+json.dump(out, open(f"{svlib.SP}/copres_baseline{'' if MODEL == 'sham' else '_' + MODEL}.json", "w"))
 print("done", len(out))

@@ -102,10 +102,14 @@ def target_alpha_for_crop_source(source_size: int) -> float:
     raise ValueError(f"A5 only has a target for 128/224 source crops, got {source_size}")
 
 
-# Target slope for this crop size, jittered by +/- ALPHA_JITTER (uniform, per crop)
-def draw_target_alpha(source_size: int, rng: np.random.Generator) -> float:
-    base = target_alpha_for_crop_source(source_size)
-    return base + float(rng.uniform(-ALPHA_JITTER, ALPHA_JITTER))
+# Jitter on the target slope, uniform in +/- ALPHA_JITTER: drawn for every crop
+def draw_alpha_jitter(rng: np.random.Generator) -> float:
+    return float(rng.uniform(-ALPHA_JITTER, ALPHA_JITTER))
+
+
+# Target slope for this crop size: reference + jitter
+def target_alpha(source_size: int, jitter: float) -> float:
+    return target_alpha_for_crop_source(source_size) + jitter
 
 
 # ── Run as a script ──────────────────────────────────────────────────────────
@@ -115,7 +119,7 @@ if __name__ == "__main__":
     base = rng.integers(0, 256, size=(28, 28, 3)).astype(np.uint8)
     crop = np.kron(base, np.ones((8, 8, 1), dtype=np.uint8))
 
-    target = draw_target_alpha(224, rng)
+    target = target_alpha(224, draw_alpha_jitter(rng))
     out, meta = apply(crop, target)
 
     print(f"A5: reference target (224px crop) = {target_alpha_for_crop_source(224)}  drawn target = {target:.3f}")

@@ -131,6 +131,13 @@ def build_bag(
     meta["positions"] = crop_specs
 
     # ── Steps 6-8: crop, resize, A3, A5 ──────────────────────────────────────
+    # A3 block side: one per bag, shared by the 16 crops; only the permutation is drawn per crop
+    a3_side = None
+    if "A3" in condition:
+        a3_side = fixed_a3_side if fixed_a3_side is not None else a3_block_permutation.draw_side(rng)
+        meta["A3_h"] = a3_side
+    # A5 slope jitter: drawn per crop (below), the only ablation parameter not shared by the bag
+
     crops = []
     crop_meta = []
     t_crop_extract = t_a3 = t_a5 = 0.0
@@ -145,16 +152,16 @@ def build_bag(
 
         if "A3" in condition:
             t0 = time.perf_counter()
-            h = fixed_a3_side if fixed_a3_side is not None else a3_block_permutation.draw_side(rng)
-            crop = a3_block_permutation.apply(crop, h, rng)
-            this_crop_meta["A3_h"] = h
+            crop = a3_block_permutation.apply(crop, a3_side, rng)
             t_a3 += time.perf_counter() - t0
 
         if "A5" in condition:
             t0 = time.perf_counter()
-            target_alpha = a5_spectral_slope.draw_target_alpha(size, rng)
+            a5_jitter = a5_spectral_slope.draw_alpha_jitter(rng)
+            target_alpha = a5_spectral_slope.target_alpha(size, a5_jitter)
             crop, a5_meta = a5_spectral_slope.apply(crop, target_alpha)
             this_crop_meta["A5"] = a5_meta
+            this_crop_meta["A5_jitter"] = a5_jitter
             t_a5 += time.perf_counter() - t0
 
         crops.append(crop)

@@ -36,7 +36,7 @@ The predictions are read from `runs/{main,sham}_fold{0,1,2}/eval/predictions.pkl
 | 7 | `pairwise_check.py` | `pairwise_check.json` | 4.2 pairwise matrix |
 | 8 | `within_bird_check.py` | `within_bird_check.json` | 4.4 (forest use within a bird) |
 | 9 | `copresence_check.py` | `copresence_check.json` | 4.3 second habitat (`MODELS=sham` to run one model) |
-| 10 | `copres_baseline.py` | `copres_baseline.json` | 4.3 "is detection specific?" check |
+| 10 | `copres_baseline.py` / `main` | `copres_baseline{,_main}.json` | 4.3 "is detection specific?" check (sham / main) |
 | 11 | `pairwise_clustering.py` | `pairwise_clustering.json` | 4.4 clustering into 5 groups |
 | 12 | `group_ablation.py` | `group_ablation.json` | 5.2 group pairs under every ablation, 5.1 summary over pairs |
 | 13 | `group_ovr_ablation.py main` / `presence` | `group_ovr_ablation_{main,presence}.json` | 5.1 group AUCs |
@@ -56,6 +56,8 @@ The predictions are read from `runs/{main,sham}_fold{0,1,2}/eval/predictions.pkl
 | 26 | `ablation_subsets_groups.py` / `viewsex` | `ablation_subsets_groups{,_viewsex}.{json,npz}` | 6.4–6.5 ablation costs per subset (bootstrap draws) |
 | 27 | `spatial_subsets.py` | `spatial_subsets.{json,npz}` | 6.4–6.5 spatial-structure upper bound |
 | 28 | `sexview_contrasts.py` | `sec6_4_view_sex.csv`, `sec6_5_dimorphism_A.csv`, `sec6_5_dimorphism_B.csv` | 6.4 and 6.5 tables (costs and paired contrasts) |
+
+Not in `run_all.sh` (GPU, one run at a time): `variance_crop.py --checkpoint ../runs/<run>/checkpoints/best.pt --fold <k>` scores the clean images of one fold with 10 independent crop draws and writes `predictions_variance.pkl` and `summary_variance.csv` to `runs/<run>/eval/` (crop-sampling variance of the AUC).
 
 Shared helpers (imported, not run on their own): `svlib.py` (loading, family bootstrap, group AUCs),
 `hist_baseline_fit.py` (training of the histogram model, an MLP).

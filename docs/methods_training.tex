@@ -123,9 +123,9 @@ Code & Operation & Channel removed & Level & Parameter (drawn per) \\
 \midrule
 $A_1$ & $(L^*, a^*, b^*) \mapsto (L^*, 0, 0)$ & chromaticity & image & -- \\
 $A_2$ & $A_1$, then $L^*$ matched to a population histogram & chromaticity and individual lightness level and contrast & image & -- \\
-$A_3$ & shuffle of $h \times h$ blocks & spatial arrangement above scale $h$ & crop & $h \in \{1, \dots, 56\}$ (crop) \\
+$A_3$ & shuffle of $h \times h$ blocks & spatial arrangement above scale $h$ & crop & $h \in \{1, \dots, 56\}$ (bag) \\
 $A_4$ & 1-D box blur along or across the body & structure in one direction & image & $\theta$, $\ell$ (bag) \\
-$A_5$ & amplitude spectrum set to a reference power law & distribution of energy across scales & crop & $\alpha^\star$ (crop) \\
+$A_5$ & amplitude spectrum set to a reference power law & distribution of energy across scales & crop & $\alpha^\star$ (bag) \\
 $A_6$ & $(L^*, a^*, b^*) \mapsto (L^*, 0, 0)$ on one colour category & one named hue & image & category (bag) \\
 $A_7$ & $(L^*, a^*, b^*) \mapsto (50, a^*, b^*)$ & lightness & image & -- \\
 \bottomrule
@@ -196,7 +196,14 @@ because blocks following the aspect ratio of the bird would carry body shape
 into the image. The permutation is applied to the crop and not to the whole
 image: permuting the canvas would move plumage between body regions and leave
 most crops inside a single block, intact.
-% src/ablations/a3_block_permutation.py; h and the permutation are drawn independently for each crop
+The block side is drawn once per bag and shared by its 16 crops, while the
+permutation is drawn independently for each crop. A shared $h$ makes the
+severity of $A_3$ a property of the bag: with one $h$ per crop, a bag would mix
+nearly intact crops ($h = 56$) with destroyed ones ($h = 1$), its condition
+would be an average over severities, and the attention could rely on the least
+degraded crops to sidestep the ablation. Drawing the permutation per crop adds
+no severity, only sixteen realisations of the same condition.
+% src/ablations/a3_block_permutation.py, src/chain.py: h per bag (meta A3_h), permutation per crop
 
 \paragraph{$A_4$: directional blur.}
 The canvas is convolved with a normalised 1-D box kernel of length $\ell$,
@@ -229,8 +236,9 @@ gain $G(\mathbf{k}) = A^\star(r) / \bar A(r)$, with $G = 1$ at the DC term, so
 that phase and mean brightness are unchanged. The target slope is the
 population median for the crop size, measured by least squares in log--log
 space over $r \in [2, 9]$ on reference crops ($\bar\alpha_{224} = 1.49$,
-$\bar\alpha_{128} = 2.19$), plus a uniform jitter,
-$\alpha^\star = \bar\alpha_P + \mathcal{U}(-0.1, 0.1)$. The two sizes need two
+$\bar\alpha_{128} = 2.19$), plus a uniform jitter drawn for every crop,
+$\alpha^\star = \bar\alpha_P + u$ with $u \sim \mathcal{U}(-0.1, 0.1)$, so that
+the residual between the obtained and the target slope is not the same for every crop. The two sizes need two
 targets because they do not show the plumage at the same apparent scale. The
 band stops below the median filter cut-off so that the slope describes plumage
 and not the filter.
@@ -282,8 +290,9 @@ whether the chromatic signal is usable on its own and not only necessary.
   their upsampling.
   (d)~Four bags of the same specimen whose conditions were drawn by the online
   sampler of Section~\ref{sec:online}, each with new positions; all 16 crops of a
-  bag share the condition, while the $A_3$ block size and the $A_5$ target slope
-  vary from crop to crop.}
+  bag share the condition and its parameters (the $A_3$ block size, the $A_4$
+  kernel, the $A_6$ category); only the $A_3$ block permutation and the $A_5$
+  jitter differ between crops.}
   \label{fig:crops}
 \end{figure}
 
@@ -328,11 +337,13 @@ each of $A_3$, $A_4$, $A_5$; on average a bag carries $1.3$ ablations, and $20\%
 of bags are in the reference condition ($\mathcal{A} = \varnothing$).
 % src/ablations/combinations.py
 
-Parameters are drawn at the level where the ablation acts: once per bag for
-$A_4$ (one kernel for the canvas) and $A_6$ (one category, decided on the whole
-specimen), once per crop for $A_3$ (block side and permutation) and $A_5$
-(target slope); $A_1$, $A_2$ and $A_7$ have no parameter and are precomputed
-once per specimen.
+Every severity parameter of an ablation is drawn once per bag and shared by its 16
+crops, so that a bag is a single, well-defined condition: the kernel of $A_4$,
+the category of $A_6$ and the block side of $A_3$. Two draws are made per crop:
+the $A_3$ block permutation, a random arrangement rather than a severity, and the
+$A_5$ slope jitter, a small random offset ($\pm 0.1$) around the target slope,
+which itself depends on the crop size.
+$A_1$, $A_2$ and $A_7$ have no parameter and are precomputed once per specimen.
 % src/ablations/common.py: DRAWN_PER
 
 \paragraph{Sham control.}

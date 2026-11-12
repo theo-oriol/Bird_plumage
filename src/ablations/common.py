@@ -24,9 +24,9 @@ INSERTION_LEVEL = {
 DRAWN_PER = {
     "A1": None,
     "A2": None,
-    "A3": "crop",
+    "A3": "bag",   # block side per bag; the permutation itself is drawn per crop
     "A4": "bag",
-    "A5": "crop",
+    "A5": "crop",  # slope jitter drawn per crop; the target also depends on crop size
     "A6": "bag",
     "A7": None,
 }

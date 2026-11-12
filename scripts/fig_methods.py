@@ -157,7 +157,7 @@ def condition_label(cond, meta: dict) -> str:
         elif code == "A6":
             parts.append(f"A6 ({meta['A6_category'].replace('_', ' ')})")
         elif code == "A3":
-            parts.append("A3 (h per crop)")
+            parts.append(f"A3 (h = {meta['A3_h']})")
         else:
             parts.append(code)
     return " + ".join(parts)

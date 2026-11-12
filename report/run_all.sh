@@ -23,6 +23,7 @@ run pairwise_check.py
 run within_bird_check.py
 run copresence_check.py
 run copres_baseline.py
+run copres_baseline.py main
 run pairwise_clustering.py
 
 # ── Section 5: where the signal comes from ───────────────────────────────────

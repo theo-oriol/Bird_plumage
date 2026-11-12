@@ -1,7 +1,8 @@
-from __future__ import annotations
-
+import os
+import sys
+import argparse
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import numpy as np
 import pandas as pd
@@ -10,15 +11,18 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from src.datasets import folds
-from src.datasets.eval_dataset import EvalDataset
-from src.model.bagmodel import BagModel
-from . import metrics as metrics_mod
+from paths import PROJECT_ROOT
 
-import argparse
-from pathlib import Path
+sys.path.insert(0, PROJECT_ROOT)
+from src.configio import load_config  # noqa: E402
+from src.datasets import folds  # noqa: E402
+from src.datasets.eval_dataset import EvalDataset  # noqa: E402
+from src.evaluation import metrics as metrics_mod  # noqa: E402
+from src.model.bagmodel import BagModel  # noqa: E402
 
-from src.configio import load_config
+# Crop-sampling variance: the clean images of one fold scored with N_DRAWS independent crop draws
+N_DRAWS = 10
+
 
 # ── Checkpoint ───────────────────────────────────────────────────────────────
 def load_checkpoint(model: BagModel, checkpoint_path: Path) -> None:
@@ -35,90 +39,77 @@ def collect_predictions(cfg: Dict[str, Any], checkpoint_path: Path, fold: int) -
     load_checkpoint(model, checkpoint_path)
     model.eval()
 
-    
-
+    valid_df = folds.load_fold(cfg, fold, "valid")
+    family_by_stem = dict(zip(valid_df["stem"], valid_df["family"]))
     rows = []
     with torch.no_grad():
-        for crops_number in range(10):
-            valid_df = folds.load_fold(cfg, fold, "valid")
-            dataset = EvalDataset(valid_df, cfg, draw = crops_number)
-
+        for crops_number in range(N_DRAWS):
+            dataset = EvalDataset(valid_df, cfg, draw=crops_number)
             dataset._items = [it for it in dataset._items if it[1].name == "reference"]
-            loader = DataLoader(dataset, batch_size=cfg.get("micro_batch_size", 16), shuffle=False, num_workers=cfg["num_workers"])
-            
-            family_by_stem = dict(zip(valid_df["stem"], valid_df["family"]))
-            
-            for batch in tqdm(loader, desc=f"fold {fold} eval", unit="bag"):
+            loader = DataLoader(dataset, batch_size=cfg.get("micro_batch_size", 16), shuffle=False,
+                                num_workers=cfg["num_workers"])
+
+            for batch in tqdm(loader, desc=f"fold {fold} draw {crops_number}", unit="bag"):
                 crops = batch["crops"].to(device)
-                cls_logits, reg_logits, _attention = model(crops)
+                cls_logits, reg_logits, attention = model(crops)
                 cls_prob = torch.sigmoid(cls_logits).cpu().numpy()
                 reg_prob = F.softmax(reg_logits, dim=-1).cpu().numpy()
                 habitat = batch["habitat"].numpy().copy()
 
                 for i, stem in enumerate(batch["stem"]):
-                    rows.append(
-                        {
-                            "stem": stem,
-                            "family": family_by_stem[stem],
-                            "condition_name": batch["condition_name"][i],
-                            "habitat": habitat[i],
-                            "cls_prob": cls_prob[i],
-                            "reg_prob": reg_prob[i],
-                            "crops_number" : crops_number,
-                            "meta": batch["positions"][i].numpy().copy(),
-                            "attention" : _attention[i].cpu().numpy()
-                        }
-                    )
+                    rows.append({
+                        "stem": stem,
+                        "family": family_by_stem[stem],
+                        "condition_name": batch["condition_name"][i],
+                        "habitat": habitat[i],
+                        "cls_prob": cls_prob[i],
+                        "reg_prob": reg_prob[i],
+                        "crops_number": crops_number,
+                        "meta": batch["positions"][i].numpy().copy(),
+                        "attention": attention[i].cpu().numpy(),
+                    })
     return pd.DataFrame(rows)
 
 
 # ── Summarise ────────────────────────────────────────────────────────────────
-def summarise(predictions: pd.DataFrame, n_bootstrap: int, seed: int) -> pd.DataFrame:
-    rng = np.random.default_rng(seed)
-
+def summarise(predictions: pd.DataFrame) -> pd.DataFrame:
     summaries = []
     for crops_number, group in predictions.groupby("crops_number"):
-        group = group.set_index("stem")
         support = np.stack([(h > 0).astype(int) for h in group["habitat"]])
         cls_prob = np.stack(group["cls_prob"])
         reg_prob = np.stack(group["reg_prob"])
         habitat = np.stack(group["habitat"])
-
-        row = {
+        summaries.append({
             "crops_number": crops_number,
             "n_images": len(group),
             "macro_auc": metrics_mod.macro_auc(support, cls_prob),
             "macro_reg_auc": metrics_mod.macro_auc(support, reg_prob),
             "macro_ap": metrics_mod.macro_average_precision(support, cls_prob),
             "mean_kl": metrics_mod.mean_kl(habitat, reg_prob),
-        }
-        summaries.append(row)
+        })
     summaries = pd.DataFrame(summaries)
-
-    print("AUC variance")
-    print(summaries["macro_reg_auc"].var())
-
-    return pd.DataFrame(summaries)
+    print(f"AUC variance across draws: {summaries['macro_reg_auc'].var():.3g}")
+    return summaries
 
 
-
+# ── Main ─────────────────────────────────────────────────────────────────────
+# Usage (from report/): python variance_crop.py --checkpoint ../runs/<run>/checkpoints/best.pt --fold 0
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="configs/eval.yaml")
+    parser.add_argument("--config", default=os.path.join(PROJECT_ROOT, "configs", "eval.yaml"))
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--fold", type=int, required=True)
     args = parser.parse_args()
 
     cfg = load_config(args.config)
     checkpoint_path = Path(args.checkpoint)
-    run_dir = checkpoint_path.parents[1]  # .../<run_name>/checkpoints/best.pt -> .../<run_name>
-    out_dir = run_dir / "eval"
+    out_dir = checkpoint_path.parents[1] / "eval"  # .../<run>/checkpoints/best.pt -> .../<run>/eval
     out_dir.mkdir(parents=True, exist_ok=True)
 
     predictions = collect_predictions(cfg, checkpoint_path, args.fold)
-    predictions.to_pickle(out_dir / "predictions_variance.pkl")  # habitat/prob columns hold arrays, not CSV-friendly
+    predictions.to_pickle(out_dir / "predictions_variance.pkl")  # array columns, not CSV-friendly
 
-    summary = summarise(predictions, n_bootstrap=cfg["n_bootstrap"], seed=cfg.get("seed", 0))
+    summary = summarise(predictions)
     summary.to_csv(out_dir / "summary_variance.csv", index=False)
     print(summary.to_string(index=False))
     print(f"\nwrote {out_dir / 'summary_variance.csv'} and {out_dir / 'predictions_variance.pkl'}")
