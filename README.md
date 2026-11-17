@@ -42,10 +42,7 @@ src/
   rng.py                      deterministic seeds (image, condition, ...)
   chain.py                    THE canonical chain (protocol §2) — orders the 4 insertion points
   ablations/
-    a1_gray_lstar.py ... a7_chroma_only.py    one ablation, one file,
-      each fully self-contained (numpy/scipy/skimage/zstandard only):
-      copying a single one of these files elsewhere is enough to reuse it,
-      nothing else from the project is needed
+    a1_gray_lstar.py ... a7_chroma_only.py    one ablation, one file
     common.py                  Condition, CIELAB exclusive group
     combinations.py             §4 draw (36 conditions)
   datasets/

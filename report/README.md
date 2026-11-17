@@ -5,7 +5,6 @@ They read the evaluated predictions in `runs/` and write
 all their outputs (JSON, CSV, NPY/NPZ and figures) to `results/`, which is created automatically.
 
 **One command:** `bash run_all.sh` (runs every step below, one job at a time, with `nice -n 10`).
-Scripts that import torch need `KMP_AFFINITY=disabled` (`run_all.sh` sets it).
 Step 14 rebuilds the exact evaluation crops from the image dataset and is the heaviest (hours).
 
 ## Setup: paths
