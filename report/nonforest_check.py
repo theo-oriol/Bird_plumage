@@ -1,86 +1,37 @@
-import os
-import gc
 import json
-import pickle
-import time
 import numpy as np
 from sklearn.metrics import roc_auc_score
+from svlib import SP, B, NH, NAMES, load, arrays, family_auc, ci
 
-from paths import RUNS_DIR, LABELS_JSON
-
-# ── Settings ─────────────────────────────────────────────────────────────────
-BASE = RUNS_DIR
-SP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
-os.makedirs(SP, exist_ok=True)
-names = json.load(open(LABELS_JSON))
-NH, FOREST, B, SEED = 10, 0, 500, 12345
-
-
-# ── Helpers ──────────────────────────────────────────────────────────────────
-def load(model):
-    S, H, F = [], [], []
-    for k in range(3):
-        df = pickle.load(open(f"{BASE}/{model}_fold{k}/eval/predictions.pkl", "rb"))
-        r = df[df.condition_name == "reference"]
-        S.append(np.stack(r.reg_prob.to_numpy()).astype(np.float64))
-        H.append(np.stack(r.habitat.to_numpy()).astype(np.float32))
-        F += list(r.family)
-        del df, r
-        gc.collect()
-    return np.concatenate(S), np.concatenate(H), np.array(F)
-
-
-def boot_weights(fam, n_boot):
-    fams, fidx = np.unique(fam, return_inverse=True)
-    rng = np.random.default_rng(SEED)
-    return [np.bincount(rng.integers(0, len(fams), len(fams)), minlength=len(fams))[fidx] for _ in range(n_boot)], len(fams)
-
-
-def wauc(y, s, w):
-    if not (w[y].sum() and w[~y].sum()):
-        return np.nan
-    return roc_auc_score(y, s, sample_weight=w)
-
+FOREST = 0
 
 # ── Per model ────────────────────────────────────────────────────────────────
-out = {"habitat_names": names, "B": B}
+# "Not forest" baseline (reversed Forest output as the score), and AUCs among non-forest birds only
+out = {"habitat_names": NAMES, "B": B}
 for model in ("main", "sham"):
-    t0 = time.time()
-    S, H, F = load(model)
-    nf = H[:, FOREST] == 0
-    nf05 = H[:, FOREST] < 0.5
-    Wnf, nfam_nf = boot_weights(F[nf], B)
+    H, S, F = arrays(load(model))
+    nf, nf05 = H[:, FOREST] == 0, H[:, FOREST] < 0.5
+    _, fidx, wauc = family_auc(F[nf])  # bootstrap over the non-forest families
     rows = {}
-    for t in range(NH):
-        if t == FOREST:
-            continue
+    for t in range(1, NH):
         y = H[:, t] > 0
-        full = roc_auc_score(y, S[:, t])
-        notforest = roc_auc_score(y, -S[:, FOREST])
         yn, Sn = y[nf], S[nf]
-        own = roc_auc_score(yn, Sn[:, t])
-        others = {h: roc_auc_score(yn, Sn[:, h]) for h in range(NH) if h not in (t, FOREST)}
+        others = {h: roc_auc_score(yn, Sn[:, h]) for h in range(1, NH) if h != t}
         best = max(others, key=others.get)
-        own_b = np.array([wauc(yn, Sn[:, t], w) for w in Wnf])
-        diff_b = own_b - np.array([wauc(yn, Sn[:, best], w) for w in Wnf])
-        lo, hi = np.nanpercentile(own_b, [2.5, 97.5])
-        dlo, dhi = np.nanpercentile(diff_b, [2.5, 97.5])
-        own05 = roc_auc_score(y[nf05], S[nf05][:, t])
-        rows[names[t]] = dict(
+        own, own_b = wauc(Sn[:, t], yn, fidx)
+        _, best_b = wauc(Sn[:, best], yn, fidx)
+        (lo, hi), (dlo, dhi) = ci(own_b), ci(own_b - best_b)
+        rows[NAMES[t]] = dict(
             prev=float(y.mean()), n_pos=int(y.sum()), n_pos_nf=int(yn.sum()), frac_pos_kept=float(yn.sum() / y.sum()),
-            full=full, notforest=notforest, nf_own=own, nf_lo=float(lo), nf_hi=float(hi),
-            nf_best=names[best], nf_best_auc=others[best], nf_diff=own - others[best], nf_dlo=float(dlo), nf_dhi=float(dhi),
-            nf05_own=own05, n_pos_nf05=int(y[nf05].sum()))
-        r = rows[names[t]]
-        print(f"  {model} {names[t][:26]:26s} full {full:.3f} | not-forest base {notforest:.3f} | "
-              f"non-forest own {own:.3f} [{lo:.3f},{hi:.3f}] (pos kept {r['n_pos_nf']}/{r['n_pos']}) | "
-              f"best other {names[best][:14]:14s} {others[best]:.3f} diff {own - others[best]:+.3f} [{dlo:+.3f},{dhi:+.3f}] | "
-              f"forest<0.5 {own05:.3f}  ({time.time() - t0:.0f}s)", flush=True)
-    out[model] = {"n_images": int(len(S)), "n_nonforest": int(nf.sum()), "n_nonforest_families": nfam_nf,
+            full=roc_auc_score(y, S[:, t]), notforest=roc_auc_score(y, -S[:, FOREST]), nf_own=own,
+            nf_lo=float(lo), nf_hi=float(hi), nf_best=NAMES[best], nf_best_auc=others[best], nf_diff=own - others[best],
+            nf_dlo=float(dlo), nf_dhi=float(dhi), nf05_own=roc_auc_score(y[nf05], S[nf05][:, t]), n_pos_nf05=int(y[nf05].sum()))
+        r = rows[NAMES[t]]
+        print(f"  {model} {NAMES[t][:26]:26s} full {r['full']:.3f} | not-forest base {r['notforest']:.3f} | "
+              f"non-forest own {own:.3f} [{lo:.3f},{hi:.3f}] | best other {NAMES[best][:14]:14s} {others[best]:.3f} "
+              f"diff {own - others[best]:+.3f} [{dlo:+.3f},{dhi:+.3f}]", flush=True)
+    out[model] = {"n_images": int(len(S)), "n_nonforest": int(nf.sum()), "n_nonforest_families": int(len(set(F[nf]))),
                   "n_forest_lt05": int(nf05.sum()), "rows": rows}
-    print(f"  {model}: {nf.sum()} non-forest images ({nfam_nf} families), {nf05.sum()} with forest share < 0.5", flush=True)
-    del S, H, F, Wnf
-    gc.collect()
 
 # ── Write ────────────────────────────────────────────────────────────────────
 json.dump(out, open(f"{SP}/nonforest_check.json", "w"))

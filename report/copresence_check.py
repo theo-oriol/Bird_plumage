@@ -1,72 +1,32 @@
-import os
-import gc
 import json
-import pickle
-import time
-import numpy as np
-from sklearn.metrics import roc_auc_score
+import os
+from svlib import SP, B, NH, NAMES, MIN_SIDE, load, arrays, family_auc, ci
 
-from paths import RUNS_DIR, LABELS_JSON
-
-# ── Settings ─────────────────────────────────────────────────────────────────
-BASE = RUNS_DIR
-SP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
-os.makedirs(SP, exist_ok=True)
-names = json.load(open(LABELS_JSON))
-NH, B, SEED, MIN_SIDE, MIN_FAM = 10, 500, 12345, 30, 5
-
-
-# ── Helpers ──────────────────────────────────────────────────────────────────
-def load(model):
-    S, H, F = [], [], []
-    for k in range(3):
-        df = pickle.load(open(f"{BASE}/{model}_fold{k}/eval/predictions.pkl", "rb"))
-        r = df[df.condition_name == "reference"]
-        S.append(np.stack(r.reg_prob.to_numpy()).astype(np.float64))
-        H.append(np.stack(r.habitat.to_numpy()).astype(np.float32))
-        F += list(r.family)
-        del df, r
-        gc.collect()
-    return np.concatenate(S), np.concatenate(H), np.array(F)
-
+MIN_FAM = 5
 
 # ── Per model ────────────────────────────────────────────────────────────────
-out = {"habitat_names": names, "B": B, "min_side": MIN_SIDE, "min_fam": MIN_FAM}
+# Among birds that use A: does the B output find those that also use B?
+out = {"habitat_names": NAMES, "B": B, "min_side": MIN_SIDE, "min_fam": MIN_FAM}
 for model in os.environ.get("MODELS", "main,sham").split(","):
-    t0 = time.time()
-    S, H, F = load(model)
-    fams_all, fidx_all = np.unique(F, return_inverse=True)
-    rng = np.random.default_rng(SEED)
-    C = np.stack([np.bincount(rng.integers(0, len(fams_all), len(fams_all)), minlength=len(fams_all)) for _ in range(B)])
+    H, S, F = arrays(load(model))
+    _, fidx, wauc = family_auc(F)
     pairs = {}
     for a in range(NH):
         m = H[:, a] > 0
-        fi = fidx_all[m]
-        nfam = int(len(np.unique(fi)))
+        fi = fidx[m]
         for b in range(NH):
             if a == b:
                 continue
             y = H[m, b] > 0
-            rec = {"n": int(m.sum()), "n_fam": nfam, "n_with_b": int(y.sum()), "n_without_b": int((~y).sum()),
-                   "n_fam_with_b": int(len(np.unique(fi[y]))), "n_fam_without_b": int(len(np.unique(fi[~y])))}
-            if y.sum() < MIN_SIDE or (~y).sum() < MIN_SIDE or rec["n_fam_with_b"] < MIN_FAM or rec["n_fam_without_b"] < MIN_FAM:
-                pairs[f"{a},{b}"] = rec
-                continue
-            s = S[m, b]
-            auc = roc_auc_score(y, s)
-            bs = []
-            for c in C:
-                w = c[fi]
-                if w[y].sum() and w[~y].sum():
-                    bs.append(roc_auc_score(y, s, sample_weight=w))
-            lo, hi = np.percentile(bs, [2.5, 97.5])
-            rec.update(auc=float(auc), lo=float(lo), hi=float(hi))
+            rec = {"n": int(m.sum()), "n_fam": int(len(set(fi))), "n_with_b": int(y.sum()), "n_without_b": int((~y).sum()),
+                   "n_fam_with_b": int(len(set(fi[y]))), "n_fam_without_b": int(len(set(fi[~y])))}
+            if min(y.sum(), (~y).sum()) >= MIN_SIDE and min(rec["n_fam_with_b"], rec["n_fam_without_b"]) >= MIN_FAM:
+                auc, boots = wauc(S[m, b], y, fi)
+                lo, hi = ci(boots)
+                rec.update(auc=float(auc), lo=float(lo), hi=float(hi))
+                print(f"  {model} uses {NAMES[a][:20]:20s} -> also {NAMES[b][:20]:20s} AUC {auc:.3f} [{lo:.3f}, {hi:.3f}]", flush=True)
             pairs[f"{a},{b}"] = rec
-            print(f"  {model} uses {names[a][:20]:20s} -> also {names[b][:20]:20s} AUC {auc:.3f} [{lo:.3f}, {hi:.3f}]  "
-                  f"with {y.sum()} / without {(~y).sum()}  ({time.time() - t0:.0f}s)", flush=True)
     out[model] = pairs
-    del S, H, F, C
-    gc.collect()
 
 # ── Write ────────────────────────────────────────────────────────────────────
 json.dump(out, open(f"{SP}/copresence_check.json", "w"))

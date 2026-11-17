@@ -1,73 +1,36 @@
 import json
 import numpy as np
-import pandas as pd
-from svlib import SP, B, GN, load, bootstrap_counts, make_wauc, group_ovr
+from svlib import SP, B, GN, TERTS, VIEWS, SEXES, load, arrays, family_auc, group_ovr, hist_pred, \
+    species_with_both_sexes, dimorphism_tertiles, subset_mask
 
-from paths import DIMORPHISM_CSV
-
-# ── Settings ─────────────────────────────────────────────────────────────────
-DIM = DIMORPHISM_CSV
-TERTS, VIEWS, SEXES = ("low", "mid", "high"), ("Back", "Belly", "Side"), ("M", "F")
 SUBSETS = (list(VIEWS) + list(SEXES) + [f"{s}_{v}" for s in SEXES for v in VIEWS] + list(TERTS)
            + [f"{t}_{s}" for t in TERTS for s in SEXES] + [f"{t}_{s}_{v}" for t in TERTS for s in SEXES for v in VIEWS])
 SOURCES = {"all": "", "L": "_L", "ab": "_ab"}  # full histogram, lightness only, colour only
 
 # ── Load ─────────────────────────────────────────────────────────────────────
 d = load("main")
-stems = np.load(f"{SP}/hist_stems.npy", allow_pickle=True)
-pos = {s: i for i, s in enumerate(stems)}
+pos = {s: i for i, s in enumerate(np.load(f"{SP}/hist_stems.npy", allow_pickle=True))}
 ii = d.stem.map(pos).to_numpy()
-assert not np.isnan(ii.astype(float)).any()
-hist = {k: np.load(f"{SP}/hist_pred_crops{s}_mlp.npy")[ii].astype(np.float64) for k, s in SOURCES.items()}
-fams = sorted(d.family.unique())
-fam2i = {f: i for i, f in enumerate(fams)}
-wauc = make_wauc(bootstrap_counts(fams))
-F = d.family.map(fam2i).to_numpy(np.int32)
-H = np.stack(d.habitat.to_numpy()).astype(np.float32)
-S = np.stack(d.reg_prob.to_numpy()).astype(np.float64)
-
-# ── Dimorphism tertiles ──────────────────────────────────────────────────────
-dim = pd.concat([pd.read_csv(DIM.format(v)).set_index("species").dimorphism.rename(v) for v in ("back", "belly")], axis=1)
-dim["index"] = dim.mean(1, skipna=False)
-dim = dim.dropna()
-nsx = d[d.sex.isin(["M", "F"])].groupby("species").sex.nunique()
-both = set(nsx.index[nsx == 2])
-sp = sorted(both & set(dim.index))
-q = np.quantile(dim.loc[sp, "index"], [1 / 3, 2 / 3])
-tert = pd.cut(dim.loc[sp, "index"], [-np.inf, q[0], q[1], np.inf], labels=list(TERTS)).astype(str)
-view, sex = d.view.to_numpy(), d.sex.to_numpy()
-isboth = d.species.isin(both).to_numpy()
+hist = {k: hist_pred(s)[ii].astype(np.float64) for k, s in SOURCES.items()}
+H, S, F = arrays(d)
+_, fidx, wauc = family_auc(F)
+both = species_with_both_sexes(d.species, d.sex)
+tert, _, _ = dimorphism_tertiles(both)
+view, sex, isboth = d.view.to_numpy(), d.sex.to_numpy(), d.species.isin(both).to_numpy()
 tr = d.species.map(tert).fillna("").to_numpy()
 
-
-# ── Subsets ──────────────────────────────────────────────────────────────────
-def mask(s):
-    if s in VIEWS:
-        return view == s
-    if s in SEXES:
-        return (sex == s) & isboth
-    p = s.split("_")
-    if p[0] in SEXES:
-        return (sex == p[0]) & isboth & (view == p[1])
-    m = tr == p[0]
-    if len(p) > 1:
-        m &= sex == p[1]
-    if len(p) > 2:
-        m &= view == p[2]
-    return m
-
-
 # ── Per subset ───────────────────────────────────────────────────────────────
+# upper bound of what spatial structure adds: group AUCs of the network vs. the histogram models (no layout)
 rows, boots = {}, {}
 for s in SUBSETS:
-    m = mask(s)
-    Pn, Bn = group_ovr(H[m], S[m], F[m], wauc)
+    m = subset_mask(s, view, sex, isboth, tr)
+    Pn, Bn = group_ovr(H[m], S[m], fidx[m], wauc)
     rows[s] = {"n": int(m.sum()), "net": float(np.nanmean(Pn))}
     for k in SOURCES:
-        Ph, Bh = group_ovr(H[m], hist[k][m], F[m], wauc)
+        Ph, Bh = group_ovr(H[m], hist[k][m], fidx[m], wauc)
         ok = ~np.isnan(Pn - Ph)
         rows[s][f"hist_{k}"] = float(np.mean(Ph[ok]))
-        rows[s][f"cost_{k}"] = float(np.mean((Ph - Pn)[ok]))   # hist - net: what is lost without the spatial structure
+        rows[s][f"cost_{k}"] = float(np.mean((Ph - Pn)[ok]))  # hist - net: what is lost without the spatial structure
         boots[f"{s}|{k}"] = np.nanmean((Bh - Bn)[ok], 0)
     print(f"{s:16s} n={rows[s]['n']:6d}  net {rows[s]['net']:.3f}  hist {rows[s]['hist_all']:.3f}  cost {rows[s]['cost_all']:+.3f}", flush=True)
 

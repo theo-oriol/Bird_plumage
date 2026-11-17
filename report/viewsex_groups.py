@@ -1,53 +1,39 @@
-import gc
 import json
 import numpy as np
-from svlib import SP, B, GN, load, bootstrap_counts, make_wauc, group_ovr, ci
-
-# ── Settings ─────────────────────────────────────────────────────────────────
-VIEWS, SEXES = ("Back", "Belly", "Side"), ("M", "F")
-out = {"groups": GN, "B": B}
-wauc = None
+from svlib import SP, B, GN, VIEWS, SEXES, load, arrays, family_auc, group_ovr, species_with_both_sexes, summary
 
 # ── Per model ────────────────────────────────────────────────────────────────
+# Group AUCs for every sex x view (species with both sexes) and the sex gap per view
+out = {"groups": GN, "B": B}
+wauc = None
 for model in ("sham", "main"):
     d = load(model)
     if wauc is None:
-        fams = sorted(d.family.unique())
-        fam2i = {f: i for i, f in enumerate(fams)}
-        wauc = make_wauc(bootstrap_counts(fams))
-    d["fidx"] = d.family.map(fam2i).astype(np.int32)
-    nsx = d[d.sex.isin(["M", "F"])].groupby("species").sex.nunique()
-    d = d[d.species.isin(set(nsx.index[nsx == 2])) & d.sex.isin(["M", "F"])]
+        fam2i, _, wauc = family_auc(d.family)
+    d = d[d.species.isin(species_with_both_sexes(d.species, d.sex)) & d.sex.isin(SEXES)]
     res, rows = {}, {}
     for s in SEXES:
         for v in VIEWS:
             sub = d[(d.sex == s) & (d.view == v)]
-            res[f"{s}_{v}"] = group_ovr(np.stack(sub.habitat.to_numpy()).astype(np.float32),
-                                        np.stack(sub.reg_prob.to_numpy()).astype(np.float64), sub.fidx.to_numpy(), wauc)
+            H, S, F = arrays(sub)
+            res[f"{s}_{v}"] = group_ovr(H, S, np.array([fam2i[x] for x in F], np.int32), wauc)
             rows[f"{s}_{v}"] = {"auc": res[f"{s}_{v}"][0].tolist(), "mean": float(np.nanmean(res[f"{s}_{v}"][0])),
                                 "n": int(len(sub)), "n_species": int(sub.species.nunique())}
-    del d
-    gc.collect()
 
     def con(terms):
-        P = sum(sg * res[k][0] for k, sg in terms)
-        BT = sum(sg * res[k][1] for k, sg in terms)
-        lo, hi = ci(BT)
-        return {"delta": P.tolist(), "lo": lo.tolist(), "hi": hi.tolist(), "mean": float(np.nanmean(P)), "mean_ci": ci(np.nanmean(BT, 0)).tolist()}
+        # signed sum of conditions, e.g. (F - M) on Belly minus (F - M) on Back
+        r = summary((sum(sg * res[k][0] for k, sg in terms), sum(sg * res[k][1] for k, sg in terms)))
+        r["delta"] = r.pop("auc")
+        return r
 
-    diffs = {}
-    for v in VIEWS:
-        diffs[f"{v}: F - M"] = con([(f"F_{v}", 1), (f"M_{v}", -1)])
+    diffs = {f"{v}: F - M": con([(f"F_{v}", 1), (f"M_{v}", -1)]) for v in VIEWS}
     for s in SEXES:
         for v in ("Belly", "Side"):
             diffs[f"{s}: {v} - Back"] = con([(f"{s}_{v}", 1), (f"{s}_Back", -1)])
     for v in ("Belly", "Side"):
-        diffs[f"F - M: {v} - Back"] = con([(f"F_{v}", 1), (f"M_{v}", -1), (f"F_Back", -1), (f"M_Back", 1)])
+        diffs[f"F - M: {v} - Back"] = con([(f"F_{v}", 1), (f"M_{v}", -1), ("F_Back", -1), ("M_Back", 1)])
     out[model] = {"rows": rows, "diffs": diffs}
-    print(f"\n== {model} ==  " + "  ".join(f"{k} {v['mean']:.3f}" for k, v in rows.items()))
-    for k, v in diffs.items():
-        per = "  ".join(f"{g[:8]} {x:+.3f}{'*' if (l > 0 or h < 0) else ' '}" for g, x, l, h in zip(GN, v["delta"], v["lo"], v["hi"]))
-        print(f"{k:22s} mean {v['mean']:+.3f} [{v['mean_ci'][0]:+.3f}, {v['mean_ci'][1]:+.3f}]   {per}")
+    print(f"{model}: " + "  ".join(f"{k} {v['mean']:+.3f}" for k, v in diffs.items()), flush=True)
 
 # ── Write ────────────────────────────────────────────────────────────────────
 json.dump(out, open(f"{SP}/viewsex_groups.json", "w"), indent=1)

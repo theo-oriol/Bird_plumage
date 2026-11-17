@@ -40,7 +40,6 @@ for ax, (title, tr, va) in zip(axes, panels):
             mu = arr.mean(0)
             ax.fill_between(ep, arr.min(0), arr.max(0), color=COL[m], alpha=0.10, lw=0)
             ax.plot(ep, mu, color=COL[m], ls=ls, lw=2, label=f"{m.capitalize()} - {lab}")
-        best = [d.early_stop_smoothed.idxmin() for d in runs[m]]
     ax.set_title(title, fontsize=11, color=INK, loc="left", fontweight="bold")
     ax.set_xlabel("epoch")
     ax.grid(color=GRID, lw=0.7)

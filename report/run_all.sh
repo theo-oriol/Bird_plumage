@@ -20,18 +20,17 @@ run plot_loss_curves.py
 run cross_output_check.py
 run nonforest_check.py
 run pairwise_check.py
-run within_bird_check.py
+run habitat_gradient.py
 run copresence_check.py
 run copres_baseline.py
 run copres_baseline.py main
-run pairwise_clustering.py
+run within_bird_check.py
 
 # ── Section 5: where the signal comes from ───────────────────────────────────
 run group_ablation.py
 run group_ovr_ablation.py main
 run group_ovr_ablation.py presence
 run hist_features.py
-run hist_features_crops.py
 run hist_baseline.py crops
 run hist_baseline.py crops L
 run hist_baseline.py crops ab
@@ -39,7 +38,7 @@ run hist_compare.py
 run hist_group_ovr.py
 run hist_per_habitat.py
 run pattern_only.py
-run hist_features_crops.py A2
+run hist_features.py A2
 run hist_baseline.py crops_A2
 run hist_baseline.py crops_A2 L
 run hist_a2_check.py
@@ -53,6 +52,5 @@ run viewsex_groups.py
 run ablation_subsets_groups.py
 run ablation_subsets_groups.py viewsex
 run spatial_subsets.py
-run sexview_contrasts.py
 
 echo "done: results in results/"
