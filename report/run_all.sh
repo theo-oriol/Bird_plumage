@@ -15,6 +15,8 @@ run compute_regression_bootstrap.py
 run compute_regression_benchmark.py
 run make_losses_json.py
 run plot_loss_curves.py
+run crop_sampling.py  # needs the GPU predictions of variance_crop*.py (see README)
+run attention_position.py
 
 # ── Section 4: specificity ───────────────────────────────────────────────────
 run cross_output_check.py

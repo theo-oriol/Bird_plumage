@@ -5,7 +5,7 @@ They read the evaluated predictions in `runs/` and write
 all their outputs (JSON, CSV, NPY/NPZ and figures) to `results/`, which is created automatically.
 
 **One command:** `bash run_all.sh` (runs every step below, one job at a time, with `nice -n 10`).
-Step 14 rebuilds the exact evaluation crops from the image dataset and is the heaviest (hours).
+Step 16 rebuilds the exact evaluation crops from the image dataset and is the heaviest (hours).
 
 ## Setup: paths
 
@@ -30,31 +30,37 @@ The predictions are read from `runs/{main,sham}_fold{0,1,2}/eval/predictions.pkl
 | 2 | `compute_regression_benchmark.py` | `summary_slope_heatmap_reg.png`, `reference_noncum_reg_sham.png` | sections 1–2 figures |
 | 3 | `make_losses_json.py` | `losses.json` | loss values |
 | 4 | `plot_loss_curves.py` | `loss_curves.png` | loss figure |
-| 5 | `cross_output_check.py` | `cross_output_check.json` | 4.2 (Marine Intertidal), appendix A.1 |
-| 6 | `nonforest_check.py` | `nonforest_check.json` | 4.1 "not forest" baseline, appendix A.2 |
-| 7 | `pairwise_check.py` | `pairwise_check.json` | 4.2 pairwise matrix |
-| 8 | `habitat_gradient.py` | `habitat_gradient.json`, `habitat_gradient_{main,sham}.png` | 4.2 PCA of the model's outputs and the five habitat groups |
-| 9 | `copresence_check.py` | `copresence_check.json` | 4.3 second habitat (`MODELS=sham` to run one model) |
-| 10 | `copres_baseline.py` / `main` | `copres_baseline{,_main}.json` | 4.3 "is detection specific?" check (sham / main) |
-| 11 | `within_bird_check.py` | `within_bird_check.json` | 4.4 and appendix A.3 (which habitat dominates within a bird) |
-| 12 | `group_ablation.py` | `group_ablation.json` | 5.2 group pairs under every ablation, 5.1 summary over pairs |
-| 13 | `group_ovr_ablation.py main` / `presence` | `group_ovr_ablation_{main,presence}.json` | 5.1 group AUCs |
-| 14 | `hist_features.py` / `A2` | `hist_stems.npy`, `hist_crop_chunks{,_A2}/` | colour histograms of the exact 16 evaluation crops (clean / A2) |
-| 15 | `hist_baseline.py crops` / `crops L` / `crops ab` / `crops_A2` / `crops_A2 L` | `hist_baseline_*.json`, `hist_pred_crops*_mlp.npy` | 5.3 histogram models (colour + lightness, lightness only, colour only; on A2) |
-| 16 | `hist_compare.py` | `hist_compare.json` | 5.3 colour vs. lightness |
-| 17 | `hist_group_ovr.py` | `hist_group_ovr_main.json` | 5.3 group level |
-| 18 | `hist_per_habitat.py` | `hist_per_habitat.json` | 5.3 habitat level |
-| 19 | `pattern_only.py` | `pattern_only.json` | 5.3 sources on their own (A2 = pattern only) |
-| 20 | `hist_a2_check.py` | `hist_a2_check.json` | 5.3 check: histogram model on the A2 crops (pooled and within-fold AUC) vs. the network on A2 |
-| 21 | `texture_check.py` | `texture_check.json` | 5.3 network vs. histogram within each channel |
-| 22 | `sex_view_check.py` | `sex_view_check.json` | 6.1–6.2 subset sizes |
-| 23 | `sex_dimorph.py` | `sex_dimorph.json` | 6.3 tertiles |
-| 24 | `sex_groups.py` | `sex_groups.json` | 6.1–6.3 group AUCs (clean) |
-| 25 | `viewsex_groups.py` | `viewsex_groups.json` | 6.2 view &times; sex (clean) |
-| 26 | `ablation_subsets_groups.py` / `viewsex` | `ablation_subsets_groups{,_viewsex}.{json,npz}` | 6.4–6.5 ablation costs per subset (bootstrap draws) |
-| 27 | `spatial_subsets.py` | `spatial_subsets.{json,npz}` | 6.4–6.5 spatial-structure upper bound |
+| 5 | `crop_sampling.py` | `crop_sampling.csv` | crop sampling check under the loss figure: AUC per habitat and macro for each bag composition, &Delta; vs. the trained bag (sham, fold 0) |
+| 6 | `attention_position.py` | `attention_position.{csv,png}` | attention along the body per crop size (head &rarr; tail, per view, family-bootstrap CIs; sham, fold 0), card under the crop sampling check |
+| 7 | `cross_output_check.py` | `cross_output_check.json` | 4.2 (Marine Intertidal), appendix A.1 |
+| 8 | `nonforest_check.py` | `nonforest_check.json` | 4.1 "not forest" baseline, appendix A.2 |
+| 9 | `pairwise_check.py` | `pairwise_check.json` | 4.2 pairwise matrix |
+| 10 | `habitat_gradient.py` | `habitat_gradient.json`, `habitat_gradient_{main,sham}.png` | 4.2 PCA of the model's outputs and the five habitat groups; clustering of the habitat centres on all axes, labels vs. outputs |
+| 11 | `copresence_check.py` | `copresence_check.json` | 4.3 second habitat (`MODELS=sham` to run one model) |
+| 12 | `copres_baseline.py` / `main` | `copres_baseline{,_main}.json` | 4.3 "is detection specific?" check (sham / main) |
+| 13 | `within_bird_check.py` | `within_bird_check.json` | 4.4 and appendix A.3 (which habitat dominates within a bird) |
+| 14 | `group_ablation.py` | `group_ablation.json` | 5.2 group pairs under every ablation, 5.1 summary over pairs |
+| 15 | `group_ovr_ablation.py main` / `presence` | `group_ovr_ablation_{main,presence}.json` | 5.1 group AUCs |
+| 16 | `hist_features.py` / `A2` | `hist_stems.npy`, `hist_crop_chunks{,_A2}/` | colour histograms of the exact 16 evaluation crops (clean / A2) |
+| 17 | `hist_baseline.py crops` / `crops L` / `crops ab` / `crops_A2` / `crops_A2 L` | `hist_baseline_*.json`, `hist_pred_crops*_mlp.npy` | 5.3 histogram models (colour + lightness, lightness only, colour only; on A2) |
+| 18 | `hist_compare.py` | `hist_compare.json` | 5.3 colour vs. lightness |
+| 19 | `hist_group_ovr.py` | `hist_group_ovr_main.json` | 5.3 group level |
+| 20 | `hist_per_habitat.py` | `hist_per_habitat.json` | 5.3 habitat level |
+| 21 | `pattern_only.py` | `pattern_only.json` | 5.3 sources on their own (A2 = pattern only) |
+| 22 | `hist_a2_check.py` | `hist_a2_check.json` | 5.3 check: histogram model on the A2 crops (pooled and within-fold AUC) vs. the network on A2 |
+| 23 | `texture_check.py` | `texture_check.json` | 5.3 network vs. histogram within each channel |
+| 24 | `sex_view_check.py` | `sex_view_check.json` | 6.1–6.2 subset sizes |
+| 25 | `sex_dimorph.py` | `sex_dimorph.json` | 6.3 tertiles |
+| 26 | `sex_groups.py` | `sex_groups.json` | 6.1–6.3 group AUCs (clean) |
+| 27 | `viewsex_groups.py` | `viewsex_groups.json` | 6.2 view &times; sex (clean) |
+| 28 | `ablation_subsets_groups.py` / `viewsex` | `ablation_subsets_groups{,_viewsex}.{json,npz}` | 6.4–6.5 ablation costs per subset (bootstrap draws) |
+| 29 | `spatial_subsets.py` | `spatial_subsets.{json,npz}` | 6.4–6.5 spatial-structure upper bound |
 
-Not in `run_all.sh` (GPU, one run at a time): `variance_crop.py --checkpoint ../runs/<run>/checkpoints/best.pt --fold <k>` scores the clean images of one fold with 10 independent crop draws and writes `predictions_variance.pkl` and `summary_variance.csv` to `runs/<run>/eval/` (crop-sampling variance of the AUC).
+Not in `run_all.sh` (GPU, one run at a time; inputs of steps 5–6, run on `sham_fold0`):
+- `variance_crop.py --checkpoint ../runs/<run>/checkpoints/best.pt --fold <k>` scores the clean images of one fold with 10 independent crop draws of the trained bag (8 small + 8 large) and writes `predictions_variance.pkl` and `summary_variance.csv` to `runs/<run>/eval/`.
+- `variance_crop_alternative_number_of_crops.py --checkpoint ../runs/<run>/checkpoints/best.pt --fold <k>` scores the same images with other bags (8 small, 8 large, 4 + 4, 16 + 16; 3 draws each, same seeds) and writes `predictions_<bag>.pkl` and `summary_<bag>.csv` to `runs/<run>/eval/n_crops/`.
+
+Exploration, not in the report: `habitat_gradient_ablations.py` projects the main model's outputs under every ablation (except the single-colour A6) on the clean PCA axes of step 9 and writes `habitat_gradient_ablations_main.{png,json}` (spread kept and 5 groups per condition).
 
 Shared code (imported, not run on its own): `svlib.py` (loading, family bootstrap and AUCs, habitat groups,
 ablation conditions, section 6 subsets), `paths.py` (paths from `.env`).
